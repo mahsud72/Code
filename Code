@@ -1,0 +1,2795 @@
+//+------------------------------------------------------------------+
+//|                                Expert Advisor By Mahdi Ghiyamati |
+//|                                                  Mahdi Ghiyamati |
+//|                                               mahsud72@gmail.com |
+//+------------------------------------------------------------------+
+//نکته: برای اینکه ربات با اردر بلاک تارگت را بگذارد باید مقدار تی پی در اینپوت ها برابر صفر باشد.
+
+#define NumNodes 8
+
+/*
+for Long Entry Function  (1)
+for Short Entry Function (2)
+for Long Close Function  (3)
+for short close Function (4)
+*/
+
+// Trade
+#include <Mql5Book\TradeHedge.mqh>
+CTradeHedge Trade;
+CPositions Positions;
+
+// Price
+#include <Mql5Book\Price.mqh>
+CBars Price;
+
+// Money management
+#include <Mql5Book\MoneyManagement.mqh>
+
+// Trailing stops
+#include <Mql5Book\TrailingStops.mqh>
+CTrailing Trail;
+
+// Timer
+#include <Mql5Book\Timer.mqh>
+CTimer Timer;
+CNewBar NewBar;
+
+//فراخوانی کلاس نوشته شده برای یک سری توابع کاربردی
+// Function's
+#include  <Mql5Book\Functions.mqh>
+CFunctions Function;
+
+//فراخوانی کلاس ترید فیلتر برای استفاده از فیلتر ایچیموکو
+#include  <Mql5Book\Trade Filters.mqh>
+CichiFilter IchiFilter;
+
+//فراخوانی فایل اینکلود تابع کف و سقف روز قبل
+// Previous Day  HH LL
+#include <Mql5Book\PreviousDayHHLL.mqh>
+
+//Parabolic Sar
+CiSAR SAR;
+
+//+------------------------------------------------------------------+
+//| Expert information                                               |
+//+------------------------------------------------------------------+
+#property copyright "Mahdi Ghiyamati"
+#property version   "1.00"
+#property description ""
+#property link      "mahsud72@gmail.com"
+
+//+------------------------------------------------------------------+
+//| Input variables                                                  |
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//                          OB Close
+input bool OBClose = true;
+input bool OBPlot = false;
+
+//+------------------------------------------------------------------+
+//                          MG-Pattern Close
+input group "MG Pattern Stop "
+input bool MGPatternClose = true;                        //MG Pattern Stop Loss
+input double AABC_Fibo1 = 0.14;
+input double AABC_Fibo2 = 0.77;
+input double BBCD_Fibo1 = 1.43;
+input double BBCD_Fibo2 = 3.01;
+input double CCDE_Fibo1 = 1.36;
+input double CCDE_Fibo2 = 2.74;
+input double DDEF_Fibo1 = 0.12;
+input double DDEF_Fibo2 = 1.49;
+input double EEFG_Fibo1 = 0.61;
+input double EEFG_Fibo2 = 3.00;
+
+ulong Slippage = 3;                                //Sllipage
+ulong MagicNumber = 123;                           //Magic Number
+bool TradeOnNewBar = true;                         //Trade On New Bar?
+
+sinput group "Money Management"
+input bool UseMoneyManagement = true;                    //Use Money Management?
+input double RiskPercent = 2;                            //Risk Precent
+input double FixedVolume = 1;                            //Fixed Volume
+double MaxVolume = 10;                             //Max Volume
+
+sinput group "Stop Loss & Take Profit"
+input double StopPercent = 1.904;                        //Stop Loss Percent
+input int TakeProfit = 0;                                //Take Profit
+
+sinput group "Trailing Stop"
+input bool UseTrailingStop = true;                       //Use Traling Stop?
+input double TrailingStopPercent = 7.90;                 //Traling Stop Percent
+input double MinimumProfitPercent = 5.40;                //Minimum Profit Percent
+input double StepPercent = 2.00;                         //Step Percent
+
+sinput group "Break Even"
+input bool UseBreakEven = true;                          //Use Break Even?
+input int BreakEvenProfit = 8000;                        //Break Even Profit
+input int LockProfit = 8000;                             //Lock Profit
+
+//+------------------------------------------------------------------+
+//                       sinput group "Timer"
+bool UseTimer = true;                                    //Use Timer?
+int StartHour = 10;                                      //Time Start Hour
+int StartMinute = 45;                                    //Time Start Minutes
+int EndHour;                                             //Time End Hour
+int EndMinute;                                           //Time End Minutes
+bool UseLocalTime = false;                               //Use Local Time?
+
+//+------------------------------------------------------------------+
+//                          MG Pattern
+input group "MG Pattern"
+input bool Repaint = true;                               //Repaint?
+input bool PlotZigzag = false;                           //Plot Zigzag?
+input double ABC_Fibo1 = 0.07;                           //Node's 6-5-4 >=
+input double ABC_Fibo2 = 1.18;                           //Node's 6-5-4 <=
+input double BCD_Fibo1 = 0.72;                           //Node's 5-4-3 >=
+input double BCD_Fibo2 = 4.22;                           //Node's 5-4-3 <=
+input double CDE_Fibo1 = 0.07;                           //Node's 4-3-2 >=
+input double CDE_Fibo2 = 2.54;                           //Node's 4-3-2 <=
+input double DEF_Fibo1 = 1.00;                           //Node's 3-2-1 >=
+input double DEF_Fibo2 = 5.24;                           //Node's 3-2-1 <=
+input double EFG_Fibo1 = 0.01;                           //Node's 2-1-0 >=
+input double EFG_Fibo2 = 5.99;                           //Node's 2-1-0 <=
+
+input group "CCI Fuzzy Close"
+input bool CCIFuzzyClose = true;                         //CCi Fuzzy Close?
+input ENUM_APPLIED_PRICE Src = PRICE_CLOSE;              //CCI Calculation Source
+input int CCILenClose = 100;                             //CCI Length
+input int MALenClose = 74;                               //CCI Moving Average Length
+input ENUM_TIMEFRAMES Time1Close = PERIOD_M10;           //First Timeframe
+
+//+------------------------------------------------------------------+
+//                               NN
+input group "NEURAL NETWORK INPUTS"
+input bool NeuralNetwork = true;
+input double Cofficient = 0.1;
+input double BuyTargetOutput = 1.5;
+input double SellTargetOutput = 0;
+input double LearningRate = 0.28;
+
+//+------------------------------------------------------------------+
+//                            Pivot
+sinput group "Pivot"
+input bool PivotClose = false;                           //Close By Pivot?
+input ENUM_TIMEFRAMES PivotTf = PERIOD_H8;               //Pivot Time Frame
+
+//+------------------------------------------------------------------+
+//                            Previous Day HH LL
+sinput group "Previous Day HH LL"
+input bool PreviousDayClose = false;                     //Close By Previous Day HH LL?
+
+//+------------------------------------------------------------------+
+//                      Ichimoku Filter Input's
+sinput group "Ichimoku"
+input bool IchiKumoFilter = true;                              //Ichimoku Cumo Entry Filter?
+input int tenkanPeriod = 30;                                   //Tenkan-Sen Period
+input int KijunPeriod = 16;                                    //Kijun-Sen Period
+input int SenkoPeriod = 08;                                    //Senko-B Period
+
+//+------------------------------------------------------------------+
+//                      Order Block Input's
+input group                "Parameters For Order Block Trading "
+input bool             DrawAnnOrderBlock       =true;//Draw ANN Order Block
+input bool             DrawSMCOrderBlock       =true;//Draw SMC Order Block
+input bool             TradeAnn       =true;//Execute Ann Order Block Trades
+input bool             TradeSmc       =true;//Execute SMC Order Block Trades
+input  ENUM_TIMEFRAMES BigAnnOBtimeframe = PERIOD_H1;   //Higher TimeFrame of ANN OB
+input  ENUM_TIMEFRAMES BigSMCOBtimeframe = PERIOD_H1;   //Higher TimeFrame of SMC OB
+input  ENUM_TIMEFRAMES TinyOBtimeframe = PERIOD_M10;   //Lower TimeFrame of OB
+input  int showlder = 4;   //Shoulder
+input  int startbar = 5;   //StartBar
+input  int PeaksLookBack = 199;   //Look Back How Far To Find Order Block
+
+//+------------------------------------------------------------------+
+//                   Parabolic Sar Close Input's
+sinput group "Parabolic Sar"
+input bool SARStopLoss = true;                           //Parabolic Sar Stop Loss (Dynamic Stop)?
+input double SARStep = 0.011;                                  //Parabolic Sar Step
+input double SARMaximum = 0.50;                                //Parabolic Sar Maximum
+input ENUM_TIMEFRAMES SARTimeframe = PERIOD_M5;                //Parabolic Sar Timeframe
+input double SarMaxPercent = 100;                              //Max Percent Price Move Of Parabolic Sar
+
+//+------------------------------------------------------------------+
+//                   VWap Input's
+sinput group "VWap"
+input bool VWapFilter = true;                                 //VWAP filter?
+input double devUp1 = 3.45;                  // Stdev above (1)
+input double devDn1 = 5.00;                  // Stdev below (1)
+input double devUp2 = 2.01;                  // Stdev above (2)
+input double devDn2 = 2.01;                  // Stdev below (2)
+input double devUp3 = 2.51;                  // Stdev above (3)
+input double devDn3 = 2.51;                  // Stdev below (3)
+
+//+------------------------------------------------------------------+
+//| Global variables                                                 |
+//+------------------------------------------------------------------+
+ulong glBuyTicket, glSellTicket;
+double OpenPrice;
+int barShift = 0;
+int numTickets = 0;
+ulong tickets[];
+
+static double buyStop, sellStop;                         //Buy and Sell Stop Loss Set
+int StopLoss;                                            //Buy and Sell Stop Loss Per Pip's
+string MessageFnSLComment;                               //Comment Stop Loss
+
+bool isPositionOpen = false;
+double closeTradeSize;
+
+double isTopPrice, isBotPrice;
+datetime isTopTime, isBotTime;
+
+double Node[8], BotNode[8];
+
+double ZigzagIsTopPrice, ZigzagIsBotPrice;
+datetime ZigzagIsTopTime, ZigzagIsBotTime;
+
+datetime ExpireDate = D'2025.07.00 00:00:00';
+
+//+------------------------------------------------------------------+
+//                         CCI Fuzzy Close
+int CCICloseHandle, CCICloseHandle1;
+int CCiHandleTime1;//, CCiHandleTime2, CCiHandleTime3;
+double CCICloseBuffer[], CCICloseBuffer1[];
+double CCIClose0, CCIClose1;
+bool CCIBuyClose = true, CCISellClose = true;
+
+//+------------------------------------------------------------------+
+//                Mg Pattern Signal Fn Variables
+bool _abc, _bcd, _cde, _def, _efg;
+bool isLong, isShort;
+double bot, top;
+
+//+------------------------------------------------------------------+
+//                               NN
+double NormalizedInputs[NumNodes], NNOutPut;
+double Weight[];
+int DataUsed = NumNodes;
+
+//+------------------------------------------------------------------+
+//                               MG Pivot
+int PivotHandle;                                               //Handle for Pivot
+double MG_PivotPP[];                                           //Pivot PP Level
+double MG_PivotS1[];                                           //Pivot S1 Level
+double MG_PivotS2[];                                           //Pivot S2 Level
+double MG_PivotS3[];                                           //Pivot S3 Level
+double MG_PivotR1[];                                           //Pivot R1 Level
+double MG_PivotR2[];                                           //Pivot R2 Level
+double MG_PivotR3[];                                           //Pivot R3 Level
+
+//+------------------------------------------------------------------+
+//                               OB
+static double OBSellClose = 0.0, OBBuyClose = 0.0;
+
+//+------------------------------------------------------------------+
+//                      Parabolic Sar Variables
+static bool UpSARRCheck = true, DownSARRCheck = true;
+double DownSARR = 0.0, UpSARR = 0.0;
+struct Slast
+  {
+   double            UpSar; // price
+   double            DnSar; // datetime
+                     Slast()  {UpSar=0; DnSar=0;}
+  };
+Slast lastSar;
+
+//+------------------------------------------------------------------+
+//                              VWap
+int VWapHandle;
+double VWap_Buffer0[];                 //VWAP
+double VWap_Buffer1[];                 //Upper1
+double VWap_Buffer2[];                 //Lower1
+double VWap_Buffer3[];                 //Upper2
+double VWap_Buffer4[];                 //Lower2
+double VWap_Buffer5[];                 //Upper3
+double VWap_Buffer6[];                 //Lower3
+bool VWapBuyEntry = true;
+bool VWapSellEntry = true;
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   SetChartProperties();
+
+   Comment("ExpireDate: ", ExpireDate);
+
+//---Tester Hide Indicators
+   TesterHideIndicators(false);
+
+//---NN
+   ArrayResize(Weight, NumNodes);
+   for(int i=0; i<NumNodes; i++)
+     {
+      Weight[i] = 0.5;
+     }
+
+//---VWap
+   if(VWapFilter)
+     {
+      VWapHandle = iCustom(Symbol(), PERIOD_CURRENT, "My Indicators\\MG-VWAP", devUp1, devDn1, devUp2, devDn2, devUp3, devDn3);
+     }
+
+//---Tester Hide Indicators
+   TesterHideIndicators(true);
+
+//---Parabolic Sar Init
+   SAR.Init(SARStep, SARMaximum, SARTimeframe);
+
+//---MG-Pivot
+   PivotHandle = iCustom(Symbol(), PERIOD_CURRENT, "My Indicators\\MG-Pivot", PivotTf);
+
+//---Ichi Filter
+   IchiFilter.Init(tenkanPeriod, KijunPeriod, SenkoPeriod);
+
+//---\
+//---CCI Fuzzy Close
+   CCICloseHandle = iCCI(_Symbol,PERIOD_CURRENT,CCILenClose, Src);
+   CCICloseHandle1 = iCCI(_Symbol,Time1Close,CCILenClose, Src);
+   ArraySetAsSeries(CCICloseBuffer, true);
+   ArraySetAsSeries(CCICloseBuffer1, true);
+
+   Trade.MagicNumber(MagicNumber);
+   Trade.Deviation(Slippage);
+   return(0);
+  }
+
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+//---Update prices
+   Price.Update(_Symbol,_Period);
+
+//---Previous Day Profit
+   if(PreviousDayClose)
+      PreviousDayHHLLFn();
+
+//---MG-Pivot Close
+   if(PivotClose)
+     {
+      CopyBuffer(PivotHandle, 0, 0, 1, MG_PivotR3);
+      CopyBuffer(PivotHandle, 1, 0, 1, MG_PivotR2);
+      CopyBuffer(PivotHandle, 2, 0, 1, MG_PivotR1);
+      CopyBuffer(PivotHandle, 3, 0, 1, MG_PivotPP);
+      CopyBuffer(PivotHandle, 4, 0, 1, MG_PivotS1);
+      CopyBuffer(PivotHandle, 5, 0, 1, MG_PivotS2);
+      CopyBuffer(PivotHandle, 6, 0, 1, MG_PivotS3);
+      MG_PivotFn();
+     }
+
+//---VWap
+   if(VWapFilter)
+     {
+      CopyBuffer(VWapHandle, 0, 0, 2, VWap_Buffer0); //VWAP
+      CopyBuffer(VWapHandle, 1, 0, 2, VWap_Buffer1); //Upper1
+      CopyBuffer(VWapHandle, 2, 0, 2, VWap_Buffer2); //Lower1
+      CopyBuffer(VWapHandle, 3, 0, 2, VWap_Buffer3); //Upper2
+      CopyBuffer(VWapHandle, 4, 0, 2, VWap_Buffer4); //Lower2
+      CopyBuffer(VWapHandle, 5, 0, 2, VWap_Buffer5); //Upper3
+      CopyBuffer(VWapHandle, 6, 0, 2, VWap_Buffer6); //Lower3
+
+      //Print("VWAP[1]:", VWap_Buffer0[1], "\tUpper1[1]:", VWap_Buffer1[1], "\tLower1[1]:", VWap_Buffer2[1], "\tUpper2[1]:", VWap_Buffer3[1], "\tLowe2[1]:", VWap_Buffer4[1],
+      //      "\tUpper3[1]:", VWap_Buffer5[1], "\tLower3[1]:", VWap_Buffer6[1]);
+     }
+
+//---Check for new bar
+   bool newBar = true;
+   if(TradeOnNewBar == true)
+     {
+      newBar = NewBar.CheckNewBar(_Symbol,_Period);
+      barShift = 1;
+     }
+
+//---Timer On
+   bool timerOn = true;
+   if(UseTimer == true)
+     {
+      timerOn = Timer.DailyTimer(StartHour,StartMinute,EndHour,EndMinute,UseLocalTime);
+     }
+
+//---Get position tickets
+   Positions.GetTickets(MagicNumber, tickets);
+   numTickets = ArraySize(tickets);
+
+//---End Time Close...
+   EndHour =   DateTimeFilter() ? 22 : 23;
+   EndMinute = DateTimeFilter() ? 00 : 10;
+
+//----
+   if(newBar)
+     {
+      //---Ichi Filter
+      bool IchiFilterCnd = IchiFilter.Cnd(Price.Close(1), 1);   //با فراخوانی تابع مربوطه بررسی میکند که آیا کندل
+
+
+      CopyBuffer(CCICloseHandle, 0, 0, MALenClose, CCICloseBuffer);
+      CopyBuffer(CCICloseHandle1, 0, 0, MALenClose, CCICloseBuffer1);
+      //---NN
+      NormalizingInputs();
+      OutPutLayerCalculation();
+
+      double TargetOutPut = 0;
+
+      if(Node[3] > Node[4])
+         TargetOutPut = BuyTargetOutput;
+      if(Node[0] < Node[5])
+         TargetOutPut = SellTargetOutput;
+
+      BackPropagation(NormalizedInputs, Weight, NNOutPut, TargetOutPut, LearningRate);
+
+      //---\
+      if(DateTimeFilter2())
+        {
+         for(int i = 0; i < numTickets; i++)
+           {
+            Trade.Close(tickets[i]);
+           }
+         if(isPositionOpen)
+           {
+            datetime ObjTime = TimeCurrent();
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Time End");
+           }
+        }
+
+
+      //////////////////////////////////////////////////////////////////////////
+      //////////////////////////////////////////////////////////////////////////
+      int bar19;
+      int bar19i;
+      double hi19;
+      double lo19;
+      int xbar19;
+      int xbar19i;
+      double xhi19;
+      double xlo19;
+      int bar20;
+      int bar20i;
+      double hi20;
+      double lo20;
+      int xbar20;
+      int xbar20i;
+      double xhi20;
+      double xlo20;
+      int bar21;
+      int bar21i;
+      double hi21;
+      double lo21;
+      int xbar21;
+      int xbar21i;
+      double xhi21;
+      double xlo21;
+
+      if(OBClose)
+        {
+         string symbol = PositionGetString(POSITION_SYMBOL);
+
+         //// if()
+         bar19= barscann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar);
+         bar19i= OBbarann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar,bar19);
+         hi19= OBhighann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar,bar19);
+         lo19= OBlowann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar,bar19);
+         if(OBPlot)
+           {
+            ObjectDelete(0,"ANNbuy");//210
+            ChartWrite("ANNbuy", "ANNbuy" + (string)hi19, 100, 14, 10, clrWhite); //Write Number of Orders on the Chart
+           }
+         xbar19= barscann(BigAnnOBtimeframe,MODE_LOW,showlder,startbar);
+         xbar19i= OBbarann(BigAnnOBtimeframe,MODE_LOW,showlder,startbar,xbar19);
+         xhi19=OBhighann(BigAnnOBtimeframe,MODE_LOW,showlder,startbar,xbar19);
+         xlo19= OBlowann(BigAnnOBtimeframe,MODE_LOW,showlder,startbar,xbar19);
+         if(OBPlot)
+           {
+            ObjectDelete(0,"ANNsellz");//210
+            ChartWritei("ANNsellz", "ANNsellz" + (string)xlo19, 100, 28, 10, clrYellow); //Write Number of Orders on the Chart
+           }
+         ///--- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+         //---xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+         if(OBPlot)
+           {
+            ObjectDelete(0,"bullOBhi19");
+            ObjectDelete(0,"bullOBlo19");
+           }
+         datetime t_th19 = iTime(NULL, BigAnnOBtimeframe, bar19i);
+         datetime f_ti19 = iTime(NULL, BigAnnOBtimeframe, bar19i-bar19i);
+         if(OBPlot)
+           {
+            if(DrawAnnOrderBlock)
+              {
+               ObjectCreate(0,"bullOBhi19", OBJ_TREND, 0, t_th19, hi19,   f_ti19, hi19);
+               ObjectSetInteger(0,"bullOBhi19",OBJPROP_COLOR,clrPink);
+               ObjectSetInteger(0, "bullOBhi19", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bullOBhi19", OBJPROP_WIDTH, 3);
+               //xxxxx
+               ObjectCreate(0,"bullOBlo19", OBJ_TREND, 0, t_th19, lo19,  f_ti19, lo19);
+               ObjectSetInteger(0,"bullOBlo19",OBJPROP_COLOR,clrPink);
+               ObjectSetInteger(0, "bullOBlo19", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bullOBlo19", OBJPROP_WIDTH, 3);
+              }
+            //xxxxx
+            ObjectDelete(0,"bearOBhi19");
+            ObjectDelete(0,"bearOBlo19");
+            datetime t_t19 = iTime(NULL, BigAnnOBtimeframe, xbar19i);
+            datetime f_t19 = iTime(NULL, BigAnnOBtimeframe, xbar19i - xbar19i);
+            if(DrawAnnOrderBlock)
+              {
+               ObjectCreate(0,"bearOBhi19", OBJ_TREND, 0, t_t19, xhi19,   f_t19, xhi19);
+               ObjectSetInteger(0,"bearOBhi19",OBJPROP_COLOR,clrKhaki);
+               ObjectSetInteger(0, "bearOBhi19", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bearOBhi19", OBJPROP_WIDTH, 3);
+               //xxxxx
+               ObjectCreate(0,"bearOBlo19", OBJ_TREND, 0, t_t19, xlo19,  f_t19, xlo19);
+               ObjectSetInteger(0,"bearOBlo19",OBJPROP_COLOR,clrKhaki);
+               ObjectSetInteger(0, "bearOBlo19", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bearOBlo19", OBJPROP_WIDTH, 3);
+              }
+           }
+         //xxxxx ///
+         //// if()
+         bar20= barscasmc(BigSMCOBtimeframe,MODE_HIGH,showlder,startbar);
+         bar20i= OBbarsmc(BigSMCOBtimeframe,MODE_HIGH,showlder,startbar,bar20);
+         hi20=OBhighsmc(BigSMCOBtimeframe,MODE_HIGH,showlder,startbar,bar20);
+         lo20= OBlowsmc(BigSMCOBtimeframe,MODE_HIGH,showlder,startbar,bar20);
+         if(OBPlot)
+           {
+            ObjectDelete(0,"SMCsellz");//210
+            ChartWriteii("SMCsellz", "SMCsellz" + (string)hi20, 100, 44, 10, clrWhite); //Write Number of Orders on the Chart
+           }
+         xbar20= barscasmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar);
+         xbar20i= OBbarsmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar,xbar20);
+         xhi20=OBhighsmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar,xbar20);
+         xlo20= OBlowsmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar,xbar20);
+         if(OBPlot)
+           {
+            ObjectDelete(0,"SMCbuy");//210
+            ChartWriteiii("SMCbuy", "SMCbuy" + (string)xlo20, 100, 60, 10, clrYellow); //Write Number of Orders on the Chart
+           }
+         ///--- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+         //---xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+         if(OBPlot)
+           {
+            ObjectDelete(0,"bearOBhi20");
+            ObjectDelete(0,"bearOBlo20");
+           }
+         datetime t_th20 = iTime(NULL, BigSMCOBtimeframe, bar20i);
+         datetime f_ti20 = iTime(NULL, BigSMCOBtimeframe, bar20i-bar20i);
+         if(OBPlot)
+           {
+            if(DrawSMCOrderBlock)
+              {
+               ObjectCreate(0,"bearOBhi20", OBJ_TREND, 0, t_th20, hi20,   f_ti20, hi20);
+               ObjectSetInteger(0,"bearOBhi20",OBJPROP_COLOR,clrMagenta);
+               ObjectSetInteger(0, "bearOBhi20", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bearOBhi20", OBJPROP_WIDTH, 3);
+               //xxxxx
+               ObjectCreate(0,"bearOBlo20", OBJ_TREND, 0, t_th20, lo20,  f_ti20, lo20);
+               ObjectSetInteger(0,"bearOBlo20",OBJPROP_COLOR,clrMagenta);
+               ObjectSetInteger(0, "bearOBlo20", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bearOBlo20", OBJPROP_WIDTH, 3);
+              }
+            //xxxxx
+            ObjectDelete(0,"bullOBhi20");
+            ObjectDelete(0,"bullOBlo20");
+            datetime t_t20i = iTime(NULL, BigSMCOBtimeframe, xbar20i);
+            datetime f_t20i = iTime(NULL, BigSMCOBtimeframe, xbar20i - xbar20i);
+            if(DrawSMCOrderBlock)
+              {
+               ObjectCreate(0,"bullOBhi20", OBJ_TREND, 0, t_t20i, xhi20,   f_t20i, xhi20);
+               ObjectSetInteger(0,"bullOBhi20",OBJPROP_COLOR,clrGoldenrod);
+               ObjectSetInteger(0, "bullOBhi20", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bullOBhi20", OBJPROP_WIDTH, 3);
+               //xxxxx
+               ObjectCreate(0,"bullOBlo20", OBJ_TREND, 0, t_t20i, xlo20,  f_t20i, xlo20);
+               ObjectSetInteger(0,"bullOBlo20",OBJPROP_COLOR,clrGoldenrod);
+               ObjectSetInteger(0, "bullOBlo20", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bullOBlo20", OBJPROP_WIDTH, 3);
+              }
+           }
+         //xxxxx ///
+         //// if()
+         bar21= barscasmc(TinyOBtimeframe,MODE_HIGH,showlder,startbar);
+         bar21i= OBbarsmc(TinyOBtimeframe,MODE_HIGH,showlder,startbar,bar21);
+         hi21=OBhighsmc(TinyOBtimeframe,MODE_HIGH,showlder,startbar,bar21);
+         lo21= OBlowsmc(TinyOBtimeframe,MODE_HIGH,showlder,startbar,bar21);
+         if(OBPlot)
+           {
+            ObjectDelete(0,"TinySMCsellz");//210
+            ChartWriteiv("TinySMCsellz", "TinySMCsellz" + (string)hi21, 100, 74, 10, clrWhite); //Write Number of Orders on the Chart
+           }
+         xbar21= barscasmc(TinyOBtimeframe,MODE_LOW,showlder,startbar);
+         xbar21i= OBbarsmc(TinyOBtimeframe,MODE_LOW,showlder,startbar,xbar21);
+         xhi21=OBhighsmc(TinyOBtimeframe,MODE_LOW,showlder,startbar,xbar21);
+         xlo21= OBlowsmc(TinyOBtimeframe,MODE_LOW,showlder,startbar,xbar21);
+         if(OBPlot)
+           {
+            ObjectDelete(0,"TinySMCbuy");//210
+            ChartWritev("TinySMCbuy", "TinySMCbuy" + (string)xlo21, 100, 88, 10, clrYellow); //Write Number of Orders on the Chart
+
+            ///--- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+            ///--- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+            //---xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+            ObjectDelete(0,"bearOBhi21");
+            ObjectDelete(0,"bearOBlo21");
+            datetime t_th21 = iTime(NULL, TinyOBtimeframe, bar21i);
+            datetime f_ti21 = iTime(NULL, TinyOBtimeframe, bar21i-bar21i);
+            if(DrawSMCOrderBlock)
+              {
+               ObjectCreate(0,"bearOBhi21", OBJ_TREND, 0, t_th21, hi21,   f_ti21, hi21);
+               ObjectSetInteger(0,"bearOBhi21",OBJPROP_COLOR,clrRed);
+               ObjectSetInteger(0, "bearOBhi21", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bearOBhi21", OBJPROP_WIDTH, 3);
+               //xxxxx
+               ObjectCreate(0,"bearOBlo21", OBJ_TREND, 0, t_th21, lo21,  f_ti21, lo21);
+               ObjectSetInteger(0,"bearOBlo21",OBJPROP_COLOR,clrRed);
+               ObjectSetInteger(0, "bearOBlo21", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bearOBlo21", OBJPROP_WIDTH, 3);
+              }
+            //xxxxx
+            ObjectDelete(0,"bullOBhi21");
+            ObjectDelete(0,"bullOBlo21");
+            datetime t_t21i = iTime(NULL, TinyOBtimeframe, xbar21i);
+            datetime f_t21i = iTime(NULL, TinyOBtimeframe, xbar21i - xbar21i);
+            if(DrawSMCOrderBlock)
+              {
+               ObjectCreate(0,"bullOBhi21", OBJ_TREND, 0, t_t21i, xhi21,   f_t21i, xhi21);
+               ObjectSetInteger(0,"bullOBhi21",OBJPROP_COLOR,clrGreen);
+               ObjectSetInteger(0, "bullOBhi21", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bullOBhi21", OBJPROP_WIDTH, 3);
+               //xxxxx
+               ObjectCreate(0,"bullOBlo21", OBJ_TREND, 0, t_t21i, xlo21,  f_t21i, xlo21);
+               ObjectSetInteger(0,"bullOBlo21",OBJPROP_COLOR,clrGreen);
+               ObjectSetInteger(0, "bullOBlo21", OBJPROP_STYLE, STYLE_SOLID);
+               ObjectSetInteger(0, "bullOBlo21", OBJPROP_WIDTH, 3);
+              }
+           }
+        }
+      ///////////////////////////////////////////////////////////////////////////////
+      ///////////////////////////////////////////////////////////////////////////////
+
+      //+------------------------------------------------------------------+
+      //|Expert Entry                                                      |
+      //+------------------------------------------------------------------+
+      Zigzag();
+      MgPatternSignal();
+
+      //---Expert Entry Condition
+      //--- Long
+      bool LongCondition = (isLong) && bot && !HolidayFilter() && CCIBuyClose && (Function.PercentFn(Price.Close(1), (DownSARR <= 0.0 ? lastSar.DnSar : DownSARR))) < SarMaxPercent;
+
+      //--- Short
+      bool ShortCondition = (isShort) && bot && !HolidayFilter() && CCISellClose && (Function.PercentFn(Price.Close(1), (UpSARR <= 0.0 ? lastSar.UpSar : UpSARR))) < SarMaxPercent;
+
+
+      //-/-/-/-/-/-//-/-/-/-///-/-/-/-//-/-/-/-/-/-/-//-/-/-/
+      //-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-//
+      //+------------------------------------------------------------------+
+      //             Taking parabolic Up and Down Price
+      static double UpSarSave = 0.0, DnSarSave = 0.0;  //این متغیر وقتی که مقدار آپ سار یا دان سار قبلی بنا بر شرایطی صفر میشود را ذخیره میکند تا آن مقدار را به سارگذشته تحویل دهد.
+      if(Price.High(barShift) <= SAR.Main(1) && UpSARRCheck)
+        {
+         lastSar.UpSar = UpSARR > 0.0 ? UpSARR : UpSarSave;
+         UpSARR = SAR.Main(1);
+         UpSARRCheck = false;
+         DownSARRCheck = true;
+        }
+      if(Price.Low(barShift) >= SAR.Main(1) && DownSARRCheck)
+        {
+         lastSar.DnSar = DownSARR > 0.0 ? DownSARR : DnSarSave;
+         DownSARR = SAR.Main(1);
+         UpSARRCheck = true;
+         DownSARRCheck = false;
+        }
+
+      if(Price.High(barShift) > UpSARR)
+        {
+         UpSarSave = UpSARR>0 ? UpSARR : UpSarSave;
+         UpSARR = 0.0;
+        }
+      if(Price.Low(barShift) < DownSARR)
+        {
+         DnSarSave = DownSARR>0 ? DownSARR : DnSarSave;
+         DownSARR = 0.0;
+        }
+
+      //Comment("UpSARR[0]: ", UpSARR, " DownSARR[0]: ", DownSARR, "\nUpSARR[1]: ", lastSar.UpSar, " DownSARR[1]: ", lastSar.DnSar);
+
+      //+------------------------------------------------------------------+
+      //                            Stop Loss
+      if(SARStopLoss)
+        {
+         //Buy Stop Loss with Parabolic Sar
+         if(LongCondition)
+           {
+            if(Price.Close(barShift) > (DownSARR <= 0.0 ? lastSar.DnSar : DownSARR))
+              {
+               StopLoss = (int(MathAbs(Price.Close(barShift) - (DownSARR <= 0.0 ? lastSar.DnSar : DownSARR)))*10);
+               MessageFnSLComment = "SL With Sar";
+              }
+            else
+              {
+               StopLoss = Function.PercentPriceFn(Price.Close(barShift), StopPercent);
+               MessageFnSLComment = "SL With Percent";
+              }
+           }
+         //Sell Stop Loss with Parabolic Sar
+         if(ShortCondition)
+           {
+            if(Price.Close(barShift) < (UpSARR <= 0.0 ? lastSar.UpSar : UpSARR))
+              {
+               StopLoss = (int(MathAbs(Price.Close(barShift) - (UpSARR <= 0.0 ? lastSar.UpSar : UpSARR)))*10);
+               MessageFnSLComment = "SL With Sar";
+              }
+            else
+              {
+               StopLoss = Function.PercentPriceFn(Price.Close(barShift), StopPercent);
+               MessageFnSLComment = "SL With Percent";
+              }
+           }
+        }
+      //Buy and Sell Stop Loss with a Percentage of the Price
+      if(!SARStopLoss)
+        {
+         StopLoss = Function.PercentPriceFn(Price.Close(barShift), StopPercent);
+         MessageFnSLComment = "SL With Percent";
+        }
+      //-/-/-/-/-/-/-/-/-//-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/
+      //-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-//
+
+      //--- Stop Loss
+      int TrailingStop = PercentPriceFn(Price.Close(barShift), TrailingStopPercent);
+      int MinimumProfit = PercentPriceFn(Price.Close(barShift), MinimumProfitPercent);
+      int Step = PercentPriceFn(Price.Close(barShift), StepPercent);
+
+      if(TimeCurrent() > ExpireDate)
+         Alert("اکسپرت منقضی شده!");
+
+      //---Order placement
+      if(timerOn == true && TimeCurrent() < ExpireDate)
+        {
+         //---Money management
+         double tradeSize;
+         if(UseMoneyManagement == true)
+            tradeSize = MoneyManagement(_Symbol,FixedVolume,RiskPercent,StopLoss);
+         else
+            tradeSize = VerifyVolume(_Symbol,FixedVolume);
+         if(tradeSize > 10)
+            tradeSize = MaxVolume;
+
+         //---Open buy order
+         if(!isPositionOpen && LongCondition && Positions.Buy(MagicNumber) == 0 && (NNOutPut > 0 || NeuralNetwork == false)  && (IchiFilterCnd || IchiKumoFilter == false))
+           {
+            glBuyTicket = Trade.Buy(_Symbol,tradeSize);
+
+            if(glBuyTicket > 0)
+              {
+               double buyProfit;
+               //OB
+               if(OBClose)
+                 {
+                  OBBuyClose = xlo19 > lo20 ? xlo19 : lo20;
+                  OBBuyClose = OBBuyClose > lo21 ? OBBuyClose : lo21;
+
+                  Print("OB Buy Close: ", OBBuyClose);
+                  Print("xlo19: ", xlo19, "\t lo20: ", lo20, "\t lo21: ", lo21);
+
+                 }
+               OpenPrice = PositionOpenPrice(glBuyTicket);
+
+               buyStop = BuyStopLoss(_Symbol,StopLoss,OpenPrice);
+               if(buyStop > 0)
+                  AdjustBelowStopLevel(_Symbol,buyStop);
+
+               if(OBClose)
+                 {
+                  buyProfit = BuyTakeProfit(_Symbol,int((OBBuyClose-OpenPrice)*10),OpenPrice);
+                 }
+               else
+                 {
+                  buyProfit = BuyTakeProfit(_Symbol,TakeProfit,OpenPrice);
+                 }
+
+               if(buyProfit > 0)
+                  AdjustAboveStopLevel(_Symbol,buyProfit);
+
+               if(buyStop > 0 || buyProfit > 0)
+                  Trade.ModifyPosition(glBuyTicket,buyStop,buyProfit);
+               glSellTicket = 0;
+               isPositionOpen = true;
+              }
+           }
+
+         //---Open sell order
+         if(!isPositionOpen && ShortCondition && Positions.Sell(MagicNumber) == 0 && (NNOutPut < 0 || NeuralNetwork == false) && (IchiFilterCnd || IchiKumoFilter == false))
+           {
+            glSellTicket = Trade.Sell(_Symbol,tradeSize);
+
+            if(glSellTicket > 0)
+              {
+               double sellProfit;
+               //OB
+               if(OBClose)
+                 {
+                  OBSellClose = hi19 < xhi20 ? hi19 : xhi20;
+                  OBSellClose = OBSellClose < xhi21 ? OBSellClose : xhi21;
+
+                  Print("OB Sell Close: ", OBSellClose);
+                  Print("hi19: ", hi19, "\t xhi20: ", xhi20, "\t xhi21: ", xhi21);
+                 }
+               OpenPrice = PositionOpenPrice(glSellTicket);
+
+               sellStop = SellStopLoss(_Symbol,StopLoss,OpenPrice);
+               if(sellStop > 0)
+                  sellStop = AdjustAboveStopLevel(_Symbol,sellStop);
+
+               if(OBClose)
+                 {
+                  sellProfit = SellTakeProfit(_Symbol,int((OpenPrice-OBSellClose)*10),OpenPrice);
+                 }
+               else
+                 {
+                  sellProfit = SellTakeProfit(_Symbol,TakeProfit,OpenPrice);
+                 }
+
+               if(sellProfit > 0)
+                  sellProfit = AdjustBelowStopLevel(_Symbol,sellProfit);
+
+               if(sellStop > 0 || sellProfit > 0)
+                  Trade.ModifyPosition(glSellTicket,sellStop,sellProfit);
+               glBuyTicket = 0;
+               isPositionOpen = true;
+              }
+           }
+
+         if(PositionsTotal() == 0)
+            isPositionOpen = false;
+         closeTradeSize = tradeSize;
+        }
+      //--- Order placement end
+
+      //+------------------------------------------------------------------+
+      //                Reset values after closing trades
+      if(PositionsTotal() == 0)
+        {
+         isPositionOpen = false;
+         buyStop = 0.0;
+         sellStop = 0.0;
+         OBSellClose = 0.0;
+         OBBuyClose = 0.0;
+        }
+
+      //---End time close all position
+      if(!timerOn)
+        {
+         for(int i = 0; i < numTickets; i++)
+           {
+            Trade.Close(tickets[i]);
+           }
+         if(isPositionOpen)
+           {
+            datetime ObjTime = TimeCurrent();
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Time End");
+           }
+         CCIBuyClose = true;
+         CCISellClose = true;
+        }
+
+      //---MGPattern Close
+      if(MGPatternClose)
+        {
+         double xxab = (MathAbs(BotNode[5] - BotNode[6])) / (MathAbs(BotNode[7] - BotNode[6]));
+         double xxad = (MathAbs(BotNode[6] - BotNode[3])) / (MathAbs(BotNode[7] - BotNode[6]));
+         double aabc = (MathAbs(BotNode[5] - BotNode[4])) / (MathAbs(BotNode[6] - BotNode[5]));
+         double bbcd = (MathAbs(BotNode[4] - BotNode[3])) / (MathAbs(BotNode[5] - BotNode[4]));
+         double ccde = (MathAbs(BotNode[3] - BotNode[2])) / (MathAbs(BotNode[4] - BotNode[3]));
+         double ddef = (MathAbs(BotNode[2] - BotNode[1])) / (MathAbs(BotNode[3] - BotNode[2]));
+         double eefg = (MathAbs(BotNode[1] - BotNode[0])) / (MathAbs(BotNode[2] - BotNode[1]));
+
+         //---ABCD Part
+         bool _aabc = aabc >= AABC_Fibo1 && aabc <= AABC_Fibo2;
+         bool _bbcd = bbcd >= BBCD_Fibo1 && bbcd <= BBCD_Fibo2;
+         bool _ccde = ccde >= CCDE_Fibo1 && ccde <= CCDE_Fibo2;
+         bool _ddef = ddef >= DDEF_Fibo1 && ddef <= DDEF_Fibo2;
+         bool _eefg = eefg >= EEFG_Fibo1 && eefg <= EEFG_Fibo2;
+
+         if(_eefg && _ddef && _aabc && _bbcd && _ccde && BotNode[0] > BotNode[1] && (PositionType(_Symbol) == POSITION_TYPE_BUY))
+           {
+            datetime ObjTime = TimeCurrent();
+
+            for(int i = 0; i < numTickets; i++)
+              {
+               Trade.Close(tickets[i]);
+              }
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "MG Pattern Close");
+
+           }
+
+         if(_eefg && _ddef && _aabc && _bbcd && _ccde && BotNode[0] < BotNode[1]  && (PositionType(_Symbol) == POSITION_TYPE_SELL))
+           {
+            datetime ObjTime = TimeCurrent();
+
+            for(int i = 0; i < numTickets; i++)
+              {
+               Trade.Close(tickets[i]);
+              }
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "MG Pattern Close");
+
+           }
+        }
+
+      //---CCI Fuzzy Close
+      if(CCIFuzzyClose)
+        {
+         if(CCIFuzzyCloseFn() == 3  && (PositionType(_Symbol) == POSITION_TYPE_BUY))
+           {
+            datetime ObjTime = TimeCurrent();
+
+            for(int i = 0; i < numTickets; i++)
+              {
+               Trade.Close(tickets[i]);
+              }
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "CCI Close");
+
+            CCIBuyClose = false;
+           }
+
+         if(CCIFuzzyCloseFn() == 4  && (PositionType(_Symbol) == POSITION_TYPE_SELL))
+           {
+            datetime ObjTime = TimeCurrent();
+
+            for(int i = 0; i < numTickets; i++)
+              {
+               Trade.Close(tickets[i]);
+              }
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "CCI Close");
+
+            CCISellClose = false;
+           }
+        }
+      //---VWAP Close
+      if(VWapFilter)
+        {
+         if(Price.Close(1) > VWap_Buffer1[1] && (PositionType(_Symbol) == POSITION_TYPE_BUY))
+           {
+            datetime ObjTime = TimeCurrent();
+
+            for(int i = 0; i < numTickets; i++)
+              {
+               Trade.Close(tickets[i]);
+              }
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "VWAP Close");
+           }
+
+         if(Price.Close(1) < VWap_Buffer2[1] && (PositionType(_Symbol) == POSITION_TYPE_SELL))
+           {
+            datetime ObjTime = TimeCurrent();
+
+            for(int i = 0; i < numTickets; i++)
+              {
+               Trade.Close(tickets[i]);
+              }
+            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "VWAP Close");
+           }
+        }
+
+
+      //---OB Close
+      //      if(OBClose)
+      //        {
+      //         if(Price.High(1) >= OBBuyClose && OBBuyClose > 0.0 && (PositionType(_Symbol) == POSITION_TYPE_BUY))
+      //           {
+      //            datetime ObjTime = TimeCurrent();
+      //            for(int i = 0; i < numTickets; i++)
+      //              {
+      //               Trade.Close(tickets[i], closeTradeSize, "OB Close");
+      //              }
+      //            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      //            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "OB Close");
+      //
+      //           }
+      //
+      //         if(Price.Low(1) <= OBSellClose && OBSellClose > 0.0 && (PositionType(_Symbol) == POSITION_TYPE_SELL))
+      //           {
+      //            datetime ObjTime = TimeCurrent();
+      //            for(int i = 0; i < numTickets; i++)
+      //              {
+      //               Trade.Close(tickets[i], closeTradeSize, "OB Close");
+      //              }
+      //            ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      //            ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "OB Close");
+      //           }
+      //        }
+
+
+      //---Break even
+      if(UseBreakEven == true && numTickets > 0)
+        {
+         for(int i = 0; i < numTickets; i++)
+           {
+            Trail.BreakEven(tickets[i], BreakEvenProfit, LockProfit);
+           }
+        }
+
+      //---Trailing stop
+      if(UseTrailingStop == true && numTickets > 0)
+        {
+         for(int i = 0; i < numTickets; i++)
+           {
+            Trail.TrailingStop(tickets[i], TrailingStop, MinimumProfit, Step);
+           }
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//|+++++++++++++++++++++++++++ Function's +++++++++++++++++++++++++++|
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//|Chart Properties Function                                         |
+//+------------------------------------------------------------------+
+void SetChartProperties()
+  {
+   ChartSetInteger(0, CHART_SHOW_GRID, false);
+   ChartSetInteger(0, CHART_MODE, CHART_CANDLES);
+   ChartSetInteger(0, CHART_COLOR_BACKGROUND, clrBlack);
+   ChartSetInteger(0,CHART_COLOR_FOREGROUND, clrWhite);
+   ChartSetInteger(0,CHART_COLOR_CANDLE_BULL, clrLightSeaGreen);
+   ChartSetInteger(0,CHART_COLOR_CHART_UP, clrLightSeaGreen);
+   ChartSetInteger(0,CHART_COLOR_CANDLE_BEAR, clrCrimson);
+   ChartSetInteger(0,CHART_COLOR_CHART_DOWN, clrCrimson);
+   ChartSetInteger(0,CHART_COLOR_STOP_LEVEL, clrGold);
+   ChartSetInteger(0, CHART_SHOW_VOLUMES, false);
+  }
+
+//+------------------------------------------------------------------+
+//|CCI Fuzzy Function                                                |
+//+------------------------------------------------------------------+
+int CCIFuzzyCloseFn()
+  {
+//---0
+   double sum = 0.0, sum1 = 0.0;//, sum2 = 0.0, sum3 = 0.0;
+
+   for(int i = 0 ; i <= MALenClose-1 ; i++)
+     {
+      sum = sum + CCICloseBuffer[i] / MALenClose;
+     }
+   CCIClose0 = sum;
+
+//---1
+   for(int i = 0 ; i <= MALenClose-1 ; i++)
+     {
+      sum1 = sum1 + CCICloseBuffer1[i] / MALenClose;
+     }
+   CCIClose1 = sum1;
+
+   bool CCIFuzzyLongEntry = CCIClose0 < -100 && CCIClose1 < -100;// && CCI2 < -100 && CCI3 < -100;
+   bool CCIFuzzyShortEntry = CCIClose0 > 100 && CCIClose1 > 100;// && CCI2 > 100 && CCI3 > 100;
+
+   bool CCIFuzzyLongClose = CCIFuzzyShortEntry;
+   bool CCIFuzzyShortClose = CCIFuzzyLongEntry;
+
+   if(CCIFuzzyLongClose)
+      return(3);
+   if(CCIFuzzyShortClose)
+      return(4);
+   return(0);
+  }
+
+//+------------------------------------------------------------------+
+//|Zigzag Function                                                   |
+//+------------------------------------------------------------------+
+bool Zigzag()
+  {
+   int ZigzagBar = false;
+   bool ZigzagIsTop, ZigzagIsBot;
+
+   ZigzagIsTop = Price.High(barShift+5) < Price.High(barShift+3) && Price.High(barShift+4) <= Price.High(barShift+3) &&
+                 Price.High(barShift+3) >= Price.High(barShift+2) && Price.High(barShift+3) >= Price.High(barShift+1) && Price.High(barShift+3) > Price.High(barShift);
+
+   ZigzagIsBot = Price.Low(barShift+5) > Price.Low(barShift+3) && Price.Low(barShift+4) >= Price.Low(barShift+3) && Price.Low(barShift+3) <= Price.Low(barShift+2)
+                 && Price.Low(barShift+3) <= Price.Low(barShift+1) && Price.Low(barShift+3) < Price.Low(barShift);
+
+   ZigzagBar = barShift+3;
+
+//--- Top and bot
+   static bool ZigzagTop_Check = true, ZigzagBot_Check = true, ZigzagToop = false, ZigzagBoot = false, ZigzagTopCheck2, ZigzagBotCheck2;
+
+   static double Zigzag, ZigzagTopPrice = NULL,  ZigzagBotPrice = NULL;
+
+   if(ZigzagIsTop && ZigzagTop_Check)
+     {
+      ZigzagTop_Check = false;
+      ZigzagBot_Check = true;
+
+      ZigzagToop = true;
+      ZigzagBoot = false;
+      ZigzagTopPrice = Price.High(ZigzagBar);
+     }
+
+   else
+      if(ZigzagIsBot && ZigzagBot_Check)
+        {
+         ZigzagBot_Check = false;
+         ZigzagTop_Check = true;
+
+         ZigzagBoot = true;
+         ZigzagToop = false;
+         ZigzagBotPrice = Price.Low(ZigzagBar);
+        }
+
+//---Zigzag Price
+
+   Zigzag = ZigzagIsTop && ZigzagToop ? Price.High(ZigzagBar) : ZigzagIsBot && ZigzagBoot ? Price.Low(ZigzagBar) : NULL;
+
+//---Repaint Zigzag
+   if(Repaint)
+     {
+      if(ZigzagIsTop && ZigzagToop)
+        {
+         ZigzagTopCheck2 = true;
+         ZigzagBotCheck2 = false;
+        }
+
+      if(ZigzagIsBot && ZigzagBoot)
+        {
+         ZigzagBotCheck2 = true;
+         ZigzagTopCheck2 = false;
+        }
+     }
+//---\
+
+//---Zigzag Node
+   if(ZigzagIsTop && ZigzagToop)
+     {
+      ArrayCopy(Node,Node,1,0);
+      Node[0] = Price.High(ZigzagBar);
+     }
+
+   if(ZigzagIsBot && ZigzagBoot)
+     {
+      ArrayCopy(Node,Node,1,0);
+      Node[0] = Price.Low(ZigzagBar);
+     }
+
+//---
+   if(Repaint)
+     {
+      if(ZigzagTopCheck2 && (Price.High(barShift+3) > Node[0]))
+         if(ZigzagIsTop)
+           {
+              {
+               Node[0] = Price.High(ZigzagBar);
+
+               ZigzagIsTopPrice = Price.High(ZigzagBar);
+               ZigzagIsTopTime = Price.Time(ZigzagBar);
+               if(PlotZigzag)
+                 {
+                  ObjectCreate(0,TimeToString(TimeCurrent()), OBJ_TREND,0,ZigzagIsTopTime,ZigzagIsTopPrice,ZigzagIsBotTime,ZigzagIsBotPrice);
+                  ObjectSetInteger(0,TimeToString(TimeCurrent()), OBJPROP_COLOR, clrWhite);
+                  ObjectSetInteger(0,TimeToString(TimeCurrent()),OBJPROP_WIDTH,2);
+                 }
+              }
+           }
+
+      if(ZigzagBotCheck2 && (Price.Low(barShift+3) < Node[0]))
+        {
+         if(ZigzagIsBot)
+           {
+            Node[0] = Price.Low(ZigzagBar);
+
+            ZigzagIsBotPrice = Price.Low(ZigzagBar);
+            ZigzagIsBotTime = Price.Time(ZigzagBar);
+            if(PlotZigzag)
+              {
+               ObjectCreate(0,TimeToString(TimeCurrent()),OBJ_TREND,0,ZigzagIsBotTime,ZigzagIsBotPrice,ZigzagIsTopTime,ZigzagIsTopPrice);
+               ObjectSetInteger(0, TimeToString(TimeCurrent()), OBJPROP_COLOR, clrRed);
+               ObjectSetInteger(0,TimeToString(TimeCurrent()),OBJPROP_WIDTH,2);
+              }
+           }
+        }
+     }
+
+//---Pattern Plot
+   if(PlotZigzag)
+     {
+      if(ZigzagIsTop && ZigzagToop)
+        {
+         ZigzagIsTopPrice = Price.High(ZigzagBar);
+         ZigzagIsTopTime = Price.Time(ZigzagBar);
+         ObjectCreate(0,TimeToString(TimeCurrent()), OBJ_TREND,0,ZigzagIsTopTime,ZigzagIsTopPrice,ZigzagIsBotTime,ZigzagIsBotPrice);
+         ObjectSetInteger(0,TimeToString(TimeCurrent()), OBJPROP_COLOR, clrWhite);
+         ObjectSetInteger(0,TimeToString(TimeCurrent()),OBJPROP_WIDTH,2);
+
+        }
+      if(ZigzagIsBot && ZigzagBoot)
+        {
+         ZigzagIsBotPrice = Price.Low(ZigzagBar);
+         ZigzagIsBotTime = Price.Time(ZigzagBar);
+         ObjectCreate(0,TimeToString(TimeCurrent()),OBJ_TREND,0,ZigzagIsBotTime,ZigzagIsBotPrice,ZigzagIsTopTime,ZigzagIsTopPrice);
+         ObjectSetInteger(0, TimeToString(TimeCurrent()), OBJPROP_COLOR, clrRed);
+         ObjectSetInteger(0,TimeToString(TimeCurrent()),OBJPROP_WIDTH,2);
+        }
+     }
+
+//---\
+   ZigzagToop = false;
+   ZigzagBoot = false;
+
+   return(true);
+  }
+
+//+------------------------------------------------------------------+
+//|Mg Pattern Signal Function                                        |
+//+------------------------------------------------------------------+
+bool MgPatternSignal()
+  {
+//--- Top and bot
+
+   bool isbot = Price.Low(barShift+5) > Price.Low(barShift+3) && Price.Low(barShift+4) >= Price.Low(barShift+3) && Price.Low(barShift+3) <= Price.Low(barShift+2)
+                && Price.Low(barShift+3) <= Price.Low(barShift+1) && Price.Low(barShift+3) < Price.Low(barShift);
+
+//--- Zigzag
+   bot = (Price.Low(barShift+3) != BotNode[0]) && isbot ? Price.Low(barShift+3) : NULL;
+
+   if(bot)
+     {
+      ArrayCopy(BotNode,BotNode,1,0);
+      BotNode[0] = bot;
+     }
+
+//--- Bot Plot
+   if(bot)
+     {
+      isBotPrice = Price.Low(barShift+3);
+      isBotTime = Price.Time(barShift+3);
+      if(PlotZigzag)
+        {
+         ObjectCreate(0,TimeToString(TimeCurrent())+"Bot",OBJ_ARROW_DOWN,0,isBotTime,isBotPrice);
+         ObjectSetInteger(0, TimeToString(TimeCurrent())+"Bot", OBJPROP_COLOR, clrRed);
+        }
+     }
+
+   double xab=NULL, xad=NULL, abc=NULL, bcd=NULL, cde=NULL, def=NULL, efg=NULL;
+
+   if(BotNode[7] > 0.0)
+     {
+      xab = (MathAbs(BotNode[5] - BotNode[6])) / (MathAbs(BotNode[7] - BotNode[6]));
+      xad = (MathAbs(BotNode[6] - BotNode[3])) / (MathAbs(BotNode[7] - BotNode[6]));
+      abc = (MathAbs(BotNode[5] - BotNode[4])) / (MathAbs(BotNode[6] - BotNode[5]));
+      bcd = (MathAbs(BotNode[4] - BotNode[3])) / (MathAbs(BotNode[5] - BotNode[4]));
+      cde = (MathAbs(BotNode[3] - BotNode[2])) / (MathAbs(BotNode[4] - BotNode[3]));
+      def = (MathAbs(BotNode[2] - BotNode[1])) / (MathAbs(BotNode[3] - BotNode[2]));
+      efg = (MathAbs(BotNode[1] - BotNode[0])) / (MathAbs(BotNode[2] - BotNode[1]));
+     }
+//---ABCD Part
+   _abc = abc >= ABC_Fibo1 && abc <= ABC_Fibo2;
+   _bcd = bcd >= BCD_Fibo1 && bcd <= BCD_Fibo2;
+   _cde = cde >= CDE_Fibo1 && cde <= CDE_Fibo2;
+   _def = def >= DEF_Fibo1 && def <= DEF_Fibo2;
+   _efg = efg >= EFG_Fibo1 && efg <= EFG_Fibo2;
+
+//--- Pattern Signal
+   bool bullPattern = _abc && _bcd && _cde && _def && _efg && BotNode[0] < BotNode[1] && Node[3] > Node[4] && Node[1] > Node[2] &&
+                      (PercentFn(BotNode[4],BotNode[0]) <= 0.7) && (PercentFn(BotNode[5],BotNode[0]) <= 0.75) && (PercentFn(Node[2],Node[0]) <= 0.33) &&
+                      BotNode[2]-BotNode[1]<9 && BotNode[5]-BotNode[2]<67 && (PercentFn(Node[0],Node[1]) <= 0.78) &&
+                      (PercentFn(BotNode[3],BotNode[2]) <= 0.188) && (PercentFn(BotNode[6],BotNode[4]) <= 0.295) &&
+                      (PercentFn(BotNode[7],BotNode[6]) <= 0.172);
+
+
+   bool bearPattern = _abc && _bcd && _cde && _def && _efg && BotNode[0] > BotNode[1] && Node[0] < Node[5] && Node[6] < Node[7] && Node[4] < Node[3] &&
+                      BotNode[0]-BotNode[5] < 26 && BotNode[1]-BotNode[5] < 9 && (PercentFn(BotNode[0],BotNode[3]) <= 0.5) &&
+                      BotNode[4]-BotNode[5] < 25 && (PercentFn(BotNode[1],BotNode[4]) <= 0.5);
+
+   static bool bullPatternCheck = false;
+   static bool bearPatternCheck = false;
+
+   if(bearPattern)
+     {
+      bullPatternCheck = true;
+      bearPatternCheck = false;
+     }
+
+   if(bullPattern)
+     {
+      bullPatternCheck = false;
+      bearPatternCheck = true;
+     }
+
+//---Signals
+   isLong = bullPattern && !bullPatternCheck;
+   isShort = bearPattern && !bearPatternCheck;
+
+   return(true);
+  }
+//+------------------------------------------------------------------+
+
+//---NN
+//+------------------------------------------------------------------+
+//| Normalizing Inputs function                                      |
+//+------------------------------------------------------------------+
+void NormalizingInputs()
+  {
+   if(BotNode[NumNodes-1] > 0)
+     {
+      double LowerNormRange = -1;
+      double UpperNormRange = 1;
+      double MinRangeValue = BotNode[ArrayMinimum(BotNode)];
+      double MaxRangeValue = BotNode[ArrayMaximum(BotNode)];
+
+      for(int i=0; i<DataUsed; i++)
+        {
+         NormalizedInputs[i] = (((BotNode[i]-MinRangeValue)*(UpperNormRange-LowerNormRange))/(MaxRangeValue-MinRangeValue))+LowerNormRange;
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Hidden Layer Calculation function                                |
+//+------------------------------------------------------------------+
+double HiddenLayerCalculation(double &inputs[], double &Weights[])
+  {
+   double  TotalWeightedInputs = 0.0;
+   for(int i=0; i<ArraySize(inputs); i++)
+     {
+      TotalWeightedInputs += inputs[i]*Weight[i];
+     }
+   TotalWeightedInputs *= Cofficient;
+   return TanHActivationFunction(TotalWeightedInputs);
+  }
+
+//+------------------------------------------------------------------+
+//| TanH Activation function                                         |
+//+------------------------------------------------------------------+
+double TanHActivationFunction(double  WeightedInputs)
+  {
+   return((exp(WeightedInputs)-exp(-WeightedInputs))/((exp(WeightedInputs)+exp(-WeightedInputs))));
+  }
+
+//+------------------------------------------------------------------+
+//| OutPut Layer Calculationl function                               |
+//+------------------------------------------------------------------+
+void OutPutLayerCalculation()
+  {
+   NNOutPut = 1*HiddenLayerCalculation(NormalizedInputs, Weight);
+  }
+
+//+------------------------------------------------------------------+
+//| Back Propagation function                                        |
+//+------------------------------------------------------------------+
+void BackPropagation(double &Inputs[], double &Weights[], double &Outputs, double TargetOutputs, double LearningRates)
+  {
+   double error = TargetOutputs - Outputs;
+   double derivative = 1-MathPow(Outputs,2);
+   for(int i=0; i<ArraySize(Inputs); i++)
+     {
+      double gradient = error * derivative * Inputs[i];
+      Weights[i] += LearningRate*gradient;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Percent function                                                 |
+//+------------------------------------------------------------------+
+double PercentFn(double Price1, double Price2)
+  {
+   double Precent = (MathAbs((Price1 - Price2)) * 100) / (Price1 > Price2 ? Price1 : Price2);
+   return(NormalizeDouble(Precent,3));
+  }
+
+//+------------------------------------------------------------------+
+//| Percent Price function                                           |
+//+------------------------------------------------------------------+
+int PercentPriceFn(double price, double percent)
+  {
+   int PrecentPrice = int((percent / 100) * price);
+   return(PrecentPrice);
+  }
+
+//+------------------------------------------------------------------+
+//| MG-Pivot Close function                                          |
+//+------------------------------------------------------------------+
+void MG_PivotFn()
+  {
+   static bool PPBreakUp = false;
+   static bool S1BreakUp = false;
+   static bool S2BreakUp = false;
+   static bool R1BreakUp = false;
+   static bool R2BreakUp = false;
+
+   static bool PPBreakDn = false;
+   static bool S1BreakDn = false;
+   static bool S2BreakDn = false;
+   static bool R1BreakDn = false;
+   static bool R2BreakDn = false;
+
+//بررسی معتبر یا نامعتبر بودن پیووت ها در هر روز
+   static bool PPBreakUpCheck = true;
+   static bool S1BreakUpCheck = true;
+   static bool S2BreakUpCheck = true;
+   static bool R1BreakUpCheck = true;
+   static bool R2BreakUpCheck = true;
+
+   static bool PPBreakDnCheck = true;
+   static bool S1BreakDnCheck = true;
+   static bool S2BreakDnCheck = true;
+   static bool R1BreakDnCheck = true;
+   static bool R2BreakDnCheck = true;
+
+   if(NewBar.CheckNewBar(Symbol(),PivotTf))
+     {
+      PPBreakUpCheck = true;
+      S1BreakUpCheck = true;
+      S2BreakUpCheck = true;
+      R1BreakUpCheck = true;
+      R2BreakUpCheck = true;
+
+      PPBreakDnCheck = true;
+      S1BreakDnCheck = true;
+      S2BreakDnCheck = true;
+      R1BreakDnCheck = true;
+      R2BreakDnCheck = true;
+
+      PPBreakUp = false;
+      S1BreakUp = false;
+      S2BreakUp = false;
+      R1BreakUp = false;
+      R2BreakUp = false;
+
+      PPBreakDn = false;
+      S1BreakDn = false;
+      S2BreakDn = false;
+      R1BreakDn = false;
+      R2BreakDn = false;
+     }
+
+//---Buy
+//PP
+   if(!isPositionOpen && Price.Close(1) > MG_PivotPP[0])
+     {
+      PPBreakUpCheck = false;
+     }
+//S1
+   if(!isPositionOpen && Price.Close(1) > MG_PivotS1[0])
+     {
+      S1BreakUpCheck = false;
+     }
+//S2
+   if(!isPositionOpen && Price.Close(1) > MG_PivotS2[0])
+     {
+      S2BreakUpCheck = false;
+     }
+//R1
+   if(!isPositionOpen && Price.Close(1) > MG_PivotR1[0])
+     {
+      R1BreakUpCheck = false;
+     }
+//R2
+   if(!isPositionOpen && Price.Close(1) > MG_PivotR2[0])
+     {
+      R2BreakUpCheck = false;
+     }
+
+//---Buy Close
+//PP
+   if(PositionType(Symbol()) == POSITION_TYPE_BUY && OpenPrice < MG_PivotPP[0] && Price.Close(1) > MG_PivotPP[0] && PPBreakUpCheck)
+     {
+      PPBreakUp = true;
+     }
+//S2
+   if(PositionType(Symbol()) == POSITION_TYPE_BUY && OpenPrice < MG_PivotS2[0] && Price.Close(1) > MG_PivotS2[0] && S2BreakUpCheck)
+     {
+      S2BreakUp = true;
+     }
+//S1
+   if(PositionType(Symbol()) == POSITION_TYPE_BUY && OpenPrice < MG_PivotS1[0] && Price.Close(1) > MG_PivotS1[0] && S1BreakUpCheck)
+     {
+      S1BreakUp = true;
+     }
+//R1
+   if(PositionType(Symbol()) == POSITION_TYPE_BUY && OpenPrice < MG_PivotR1[0] && Price.Close(1) > MG_PivotR1[0] && R1BreakUpCheck)
+     {
+      R1BreakUp = true;
+     }
+//R2
+   if(PositionType(Symbol()) == POSITION_TYPE_BUY && OpenPrice < MG_PivotR2[0] && Price.Close(1) > MG_PivotR2[0] && R2BreakUpCheck)
+     {
+      R2BreakUp = true;
+     }
+
+//PP Close
+   if(PPBreakUp && Price.Close(1) < MG_PivotPP[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot PP Close");
+
+      Function.MessageObject("Pivot PP Close", Price.Close(1), 8);
+      PPBreakUp = false;
+     }
+//R1 Close
+   if(R1BreakUp && Price.Close(1) < MG_PivotR1[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot R1 Close");
+
+      Function.MessageObject("Pivot R1 Close", Price.Close(1), 8);
+      R1BreakUp = false;
+     }
+//R2 Close
+   if(R2BreakUp && Price.Close(1) < MG_PivotR2[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot R2 Close");
+
+      Function.MessageObject("Pivot R2 Close", Price.Close(1), 8);
+      R2BreakUp = false;
+     }
+//S1 Close
+   if(S1BreakUp && Price.Close(1) < MG_PivotS1[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot S1 Close");
+
+      Function.MessageObject("Pivot S1 Close", Price.Close(1), 8);
+      S1BreakUp = false;
+     }
+//S2 Close
+   if(S2BreakUp && Price.Close(1) < MG_PivotS2[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot S2 Close");
+
+      Function.MessageObject("Pivot S2 Close", Price.Close(1), 8);
+      S2BreakUp = false;
+     }
+
+//---Sell
+//PP
+   if(!isPositionOpen && Price.Close(1) < MG_PivotPP[0])
+     {
+      PPBreakDnCheck = false;
+     }
+//S1
+   if(!isPositionOpen && Price.Close(1) < MG_PivotS1[0])
+     {
+      S1BreakDnCheck = false;
+     }
+//S2
+   if(!isPositionOpen && Price.Close(1) < MG_PivotS2[0])
+     {
+      S2BreakDnCheck = false;
+     }
+//R1
+   if(!isPositionOpen && Price.Close(1) < MG_PivotR1[0])
+     {
+      R1BreakDnCheck = false;
+     }
+//R2
+   if(!isPositionOpen && Price.Close(1) < MG_PivotR2[0])
+     {
+      R2BreakDnCheck = false;
+     }
+
+//---Sell Close
+//PP
+   if(PositionType(Symbol()) == POSITION_TYPE_SELL && OpenPrice > MG_PivotPP[0] && Price.Close(1) < MG_PivotPP[0] && PPBreakDnCheck)
+     {
+      PPBreakDn = true;
+     }
+//S2
+   if(PositionType(Symbol()) == POSITION_TYPE_SELL && OpenPrice > MG_PivotS2[0] && Price.Close(1) < MG_PivotS2[0] && S2BreakDnCheck)
+     {
+      S2BreakDn = true;
+     }
+//S1
+   if(PositionType(Symbol()) == POSITION_TYPE_SELL && OpenPrice > MG_PivotS1[0] && Price.Close(1) < MG_PivotS1[0] && S1BreakDnCheck)
+     {
+      S1BreakDn = true;
+     }
+//R1
+   if(PositionType(Symbol()) == POSITION_TYPE_SELL && OpenPrice > MG_PivotR1[0] && Price.Close(1) < MG_PivotR1[0] && R1BreakDnCheck)
+     {
+      R1BreakDn = true;
+     }
+//R2
+   if(PositionType(Symbol()) == POSITION_TYPE_SELL && OpenPrice > MG_PivotR2[0] && Price.Close(1) < MG_PivotR2[0] && R2BreakDnCheck)
+     {
+      R2BreakDn = true;
+     }
+
+//PP Close
+   if(PPBreakDn && Price.Close(1) > MG_PivotPP[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot PP Close");
+
+      Function.MessageObject("Pivot PP Close", Price.Close(1), 8);
+      PPBreakDn = false;
+     }
+//R1 Close
+   if(R1BreakDn && Price.Close(1) > MG_PivotR1[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot R1 Close");
+
+      Function.MessageObject("Pivot R1 Close", Price.Close(1), 8);
+      R1BreakDn = false;
+     }
+//R2 Close
+   if(R2BreakDn && Price.Close(1) > MG_PivotR2[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot R2 Close");
+
+      Function.MessageObject("Pivot R2 Close", Price.Close(1), 8);
+      R2BreakDn = false;
+     }
+//S1 Close
+   if(S1BreakDn && Price.Close(1) > MG_PivotS1[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot S1 Close");
+
+      Function.MessageObject("Pivot S1 Close", Price.Close(1), 8);
+      S1BreakDn = false;
+     }
+//S2 Close
+   if(S2BreakDn && Price.Close(1) > MG_PivotS2[0])
+     {
+      for(int i = 0; i < numTickets; i++)
+        {
+         Trade.Close(tickets[i]);
+        }
+      datetime ObjTime = TimeCurrent();
+      ObjectCreate(0,DoubleToString(Price.Close(1)), OBJ_TEXT, 0, ObjTime, Price.Close(1));
+      ObjectSetString(0, DoubleToString(Price.Close(1)), OBJPROP_TEXT, "Pivot S2 Close");
+
+      Function.MessageObject("Pivot S2 Close", Price.Close(1), 8);
+      S2BreakDn = false;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+
+
+//+------------------------------------------------------------------+
+///+------------------------------------------------------------------+
+bool buySignal()
+  {
+   bool ReturnValue = false;
+   double Maximum = iHigh(NULL,PERIOD_M20,PikBar(PERIOD_M20,MODE_LOW,2,5,1)+1);
+   double Minimum = iLow(NULL,PERIOD_M20,PikBar(PERIOD_M20,MODE_LOW,2,5,1));
+   double Fifty = ((Maximum - Minimum) * 5 / 100) + Minimum;
+   int xbar20= barscasmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar);
+   int xbar20i= barscasmc(TinyOBtimeframe,MODE_LOW,showlder,startbar);
+   int bar19= barscann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar);
+   int scabar= OBbarann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar,bar19);
+
+   if(TradeAnn)
+      if(iClose(Symbol(),TinyOBtimeframe,1) > OBlowann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar,bar19) &&
+         (iLow(Symbol(),TinyOBtimeframe,1) < OBhighann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar,bar19)  ||
+          iLow(Symbol(),TinyOBtimeframe,1) < OBhighann(BigAnnOBtimeframe,MODE_HIGH,showlder,startbar,bar19)) &&
+         //        iClose(Symbol(),TinyOBtimeframe,4) > high(TinyOBtimeframe, 3 , 1 + 1 + 3)  && //Engulf
+         EngulfBuy(TinyOBtimeframe,1,12) > 0
+        )
+        {
+         ReturnValue = true;    //schematic 25 BUY
+        }
+
+   if(TradeSmc)
+      if(iClose(Symbol(),TinyOBtimeframe,1) > OBlowsmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar,xbar20) &&
+         (iLow(Symbol(),TinyOBtimeframe,1) < OBhighsmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar,xbar20)  ||
+          iLow(Symbol(),TinyOBtimeframe,1) < OBhighsmc(BigSMCOBtimeframe,MODE_LOW,showlder,startbar,xbar20)) &&
+         //        iClose(Symbol(),TinyOBtimeframe,1+3) > high(TinyOBtimeframe, 3 , 1 + 1+3)  && //Engulf
+         EngulfBuy(TinyOBtimeframe,1,12) > 0
+        )
+        {
+         ReturnValue = true;    //schematic 25 BUY
+        }
+   return ReturnValue;
+  }
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+bool sellSignal()
+  {
+//SymbolInfoDouble(_Symbol, SYMBOL_POINT)*300
+   bool ReturnValue = false;
+   double Maximum = iHigh(NULL,PERIOD_M20,PikBar(PERIOD_M20,MODE_HIGH,2,5,1));
+   double Minimum = iLow(NULL,PERIOD_M20,PikBar(PERIOD_M20,MODE_HIGH,2,5,1)+1);
+   double Fifty = ((Maximum - Minimum) * 5 / 100) + Minimum;
+   int bar20= barscasmc(BigSMCOBtimeframe,MODE_HIGH,showlder,startbar);
+   int bar20i= barscasmc(TinyOBtimeframe,MODE_HIGH,showlder,startbar);
+   int xbar19= barscann(BigAnnOBtimeframe,MODE_LOW,showlder,startbar);
+   int xbar19i= OBbarann(BigAnnOBtimeframe,MODE_LOW,showlder,startbar,xbar19);
+
+   if(TradeAnn)
+      if(iClose(Symbol(),TinyOBtimeframe,1) < OBhighann(BigAnnOBtimeframe,MODE_LOW,showlder,showlder,xbar19) &&
+         (iHigh(Symbol(),TinyOBtimeframe,1) > OBlowann(BigAnnOBtimeframe,MODE_LOW,showlder,showlder,xbar19) ||
+          iHigh(Symbol(),BigAnnOBtimeframe,1) > OBlowann(BigAnnOBtimeframe,MODE_LOW,showlder,showlder,xbar19))  &&
+         //      iClose(Symbol(),TinyOBtimeframe,1+3) < low(TinyOBtimeframe, 3 , 1 + 1+3)  && //Engulf
+         EngulfSell(TinyOBtimeframe,1,12) > 0
+        )
+        {
+         ReturnValue = true;    //schematic 25 SELL
+        }
+
+   if(TradeSmc)
+      if(iClose(Symbol(),TinyOBtimeframe,1) < OBhighsmc(BigSMCOBtimeframe,MODE_HIGH,showlder,showlder,bar20) &&
+         (iHigh(Symbol(),TinyOBtimeframe,1) > OBlowsmc(BigSMCOBtimeframe,MODE_HIGH,showlder,showlder,bar20) ||
+          iHigh(Symbol(),BigSMCOBtimeframe,1) > OBlowsmc(BigSMCOBtimeframe,MODE_HIGH,showlder,showlder,bar20))   &&
+         //       iClose(Symbol(),TinyOBtimeframe,1+3) < low(TinyOBtimeframe, 3 , 1 + 1+3)  && //Engulf
+         EngulfSell(TinyOBtimeframe,1,12) > 0
+        )
+        {
+         ReturnValue = true;    //schematic 25 SELL
+        }
+
+   return ReturnValue;
+  }
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| Get H Line                                            |
+//+------------------------------------------------------------------+
+double   HLineSLprice()
+  {
+   return(ObjectGetDouble(0,"HLineSL",OBJPROP_PRICE));
+  }
+
+//+------------------------------------------------------------------+
+//| Get H Line                                            |
+//+------------------------------------------------------------------+
+int   PikBar(ENUM_TIMEFRAMES timeframe,int mode, int shoulder, int startBar,int peakNo)
+  {
+   int barIndex=0;
+   int ar[]; // Array
+   ArrayResize(ar,PeaksLookBack+1); // Prepare the array
+   for(int y=3; y<=PeaksLookBack; y++)
+     {
+      ar[0]=0; // Set the values
+      ar[1]=FindPeak(timeframe,mode,shoulder,startBar);
+
+      ar[2]=FindPeak(timeframe,mode,shoulder,ar[1]+1);  // Set the value for the new array element
+      ar[y]=FindPeak(timeframe,mode,shoulder,ar[y-1]+1);;  // Set the value for the new array element
+     }
+
+   for(int x=1; x<=PeaksLookBack; x++)
+     {
+      if(peakNo ==x)
+         barIndex = ar[x];
+     }
+   return barIndex;
+  }
+
+//+------------------------------------------------------------------+
+//|                                              |
+//+------------------------------------------------------------------+
+int FindPeak(ENUM_TIMEFRAMES timeframe,int mode, int shoulder, int startBar)
+  {
+//a1
+   if(mode!= MODE_HIGH && mode!= MODE_LOW)
+      return(-1);
+   int currentBar = startBar;
+   int foundBar = FindNextPeak(timeframe,mode,shoulder*2+1, currentBar - shoulder);
+   while(foundBar!= currentBar)  //while1
+     {
+      currentBar = FindNextPeak(timeframe,mode, shoulder, currentBar+1);
+      foundBar   = FindNextPeak(timeframe,mode, shoulder*2+1,currentBar-shoulder);
+     }//while1
+   return(currentBar);
+  }//a1
+//+------------------------------------------------------------------+
+int FindNextPeak(ENUM_TIMEFRAMES timeframe, int mode, int shoulder, int startBar)
+  {
+//a2
+   if(startBar < 0)  //a3
+     {
+      shoulder += startBar;
+      startBar = 0 ;
+     }//a3
+   return((mode == MODE_HIGH) ?
+          iHighest(Symbol(), timeframe, (ENUM_SERIESMODE)mode, shoulder, startBar) :
+          iLowest(Symbol(), timeframe, (ENUM_SERIESMODE)MODE_LOW, shoulder, startBar)
+         );
+  }//a2
+
+//+------------------------------------------------------------------+
+//| Get  highest value                                            |
+//+------------------------------------------------------------------+
+double hiclo(ENUM_TIMEFRAMES timeFrame,int count,  int startBar)
+  {
+   int hiBar = iHighest(Symbol(), timeFrame, (ENUM_SERIESMODE)MODE_CLOSE, count, startBar);
+   double eLow = NormalizeDouble(iClose(Symbol(),timeFrame,hiBar), _Digits) ;
+   return (eLow) ;
+  }
+//+------------------------------------------------------------------+
+//| Get  lowest value                                            |
+//+------------------------------------------------------------------+
+double lowclo(ENUM_TIMEFRAMES timeFrame, int count, int startBar)
+  {
+   int loBar =  iLowest(Symbol(), timeFrame, (ENUM_SERIESMODE)MODE_CLOSE, count, startBar) ;
+   double eHigh = NormalizeDouble(iClose(Symbol(),timeFrame,loBar), _Digits) ;
+   return (eHigh) ;
+  }
+
+//+------------------------------------------------------------------+
+//| Get  highest value                                            |
+//+------------------------------------------------------------------+
+double high(ENUM_TIMEFRAMES timeFrame,int count,  int startBar)
+  {
+   int hiBar = iHighest(Symbol(), timeFrame, (ENUM_SERIESMODE)MODE_HIGH, count, startBar);
+   double eHigh = NormalizeDouble(iHigh(Symbol(),timeFrame,hiBar), _Digits) ;
+   return (eHigh) ;
+  }
+//+------------------------------------------------------------------+
+//| Get  lowest value                                            |
+//+------------------------------------------------------------------+
+double low(ENUM_TIMEFRAMES timeFrame, int count, int startBar)
+  {
+   int loBar =  iLowest(Symbol(), timeFrame, (ENUM_SERIESMODE)MODE_LOW, count, startBar) ;
+   double eLow = NormalizeDouble(iLow(Symbol(),timeFrame,loBar), _Digits) ;
+   return (eLow) ;
+  }
+
+////+------------------------------------------------------------------+
+//| Get  Order Block High Line                                            |
+//+------------------------------------------------------------------+
+double OBhighann(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar,int peakNo)
+  {
+//OBhigh
+   double annline = 0;
+   int annbar = OBbarann(timeframe,mode,shoulder,startBar,peakNo);
+
+   if(mode == MODE_HIGH)
+      if(!bearcandle(timeframe,annbar+1))
+         annline = iHigh(Symbol(),timeframe,annbar);
+
+   if(mode == MODE_LOW)
+      if(!bullcandle(timeframe,annbar+1))
+         annline = iHigh(Symbol(),timeframe,annbar);
+
+   if(mode == MODE_HIGH)
+      if(bearcandle(timeframe,annbar+1))
+         if(!bearcandle(timeframe,annbar+2))
+            annline =  high(timeframe,2,annbar)  ;
+
+   if(mode == MODE_LOW)
+      if(bullcandle(timeframe,annbar+1))
+         if(!bullcandle(timeframe,annbar+2))
+            annline =  high(timeframe,2,annbar)  ;
+
+   if(mode == MODE_HIGH)
+      if(bearcandle(timeframe,annbar+1))
+         if(bearcandle(timeframe,annbar+2))
+            if(!bearcandle(timeframe,annbar+3))
+               annline =  high(timeframe,3,annbar)  ;
+
+   if(mode == MODE_LOW)
+      if(bullcandle(timeframe,annbar+1))
+         if(bullcandle(timeframe,annbar+2))
+            if(!bullcandle(timeframe,annbar+3))
+               annline =  high(timeframe,3,annbar)  ;
+
+   return(annline);
+
+  }//OBhigh
+////+------------------------------------------------------------------+
+//| Get  Order Block Low Line                                            |
+//+------------------------------------------------------------------+
+double OBlowann(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar,int peakNo)
+  {
+//OBhigh
+   double annline = 0;
+   int annbar = OBbarann(timeframe,mode,shoulder,startBar,peakNo);
+
+   if(mode == MODE_HIGH)
+      if(!bearcandle(timeframe,annbar+1))
+         annline = iLow(Symbol(),timeframe,annbar);
+
+   if(mode == MODE_LOW)
+      if(!bullcandle(timeframe,annbar+1))
+         annline = iLow(Symbol(),timeframe,annbar);
+
+   if(mode == MODE_HIGH)
+      if(bearcandle(timeframe,annbar+1))
+         if(!bearcandle(timeframe,annbar+2))
+            annline =  low(timeframe,2,annbar)  ;
+
+   if(mode == MODE_LOW)
+      if(bullcandle(timeframe,annbar+1))
+         if(!bullcandle(timeframe,annbar+2))
+            annline =  low(timeframe,2,annbar)  ;
+
+   if(mode == MODE_HIGH)
+      if(bearcandle(timeframe,annbar+1))
+         if(bearcandle(timeframe,annbar+2))
+            if(!bearcandle(timeframe,annbar+3))
+               annline =  low(timeframe,3,annbar)  ;
+
+   if(mode == MODE_LOW)
+      if(bullcandle(timeframe,annbar+1))
+         if(bullcandle(timeframe,annbar+2))
+            if(!bullcandle(timeframe,annbar+3))
+               annline =  low(timeframe,3,annbar)  ;
+
+   return(annline);
+
+  }//OBhigh
+//======
+int barscann(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar)
+  {
+//int barscan
+   int scan = -1;
+   int count = 0;
+   for(int i = 1; i <= PeaksLookBack; i++)   //for
+     {
+      int bar1 = OBbarann(timeframe,mode,shoulder,startBar, i); //what bar is peak i  ?
+      if(bar1  > 0)
+         if(mode == MODE_LOW)
+            if(OBhighann(timeframe,mode,shoulder,startBar, i) > high(timeframe,bar1-6,4))
+               if(high(timeframe,45,1) - low(timeframe,45,1) >  SymbolInfoDouble(_Symbol, SYMBOL_POINT)*200)
+                 {scan = i; break;}
+      if(bar1  > 0)
+         if(mode == MODE_HIGH)
+            if(OBlowann(timeframe,mode,shoulder,startBar, i) < low(timeframe,bar1-6,4))
+               if(high(timeframe,45,1) - low(timeframe,45,1) >  SymbolInfoDouble(_Symbol, SYMBOL_POINT)*200)
+                 {scan = i; break;}
+      // return( scan);
+     }//for(int)
+   return(scan);
+  }//int barscan
+////+------------------------------------------------------------------+
+//| Get  Order Block Bar                                            |
+//+------------------------------------------------------------------+
+int OBbarann(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar,int peakNo)
+  {
+//blocktop
+   double peakline = PikLine(timeframe,mode,shoulder,startBar,peakNo);
+   int   peaklinebar = PikBar(timeframe,mode,shoulder,startBar,peakNo);
+   int   peaklinebarprev = 0;
+   if(peakNo > 1)
+      peaklinebarprev = PikBar(timeframe,mode,shoulder,startBar,peakNo-1);
+   if(peakNo == 1)
+      peaklinebarprev = startBar;
+   int   peakbardiff = EngulfDown(timeframe,peaklinebar,peaklinebarprev) - peaklinebarprev ;
+   int   peakbardiffi = EngulfUp(timeframe,peaklinebar,peaklinebarprev) - peaklinebarprev ;
+
+   int   crossstart = 0;
+   if(peakNo > 1)
+      crossstart = peaklinebarprev;
+   if(peakNo == 1)
+      crossstart = 1;
+   int xbar = BarCrossUp(timeframe,peakline,peaklinebar,  crossstart);
+   int xbari = BarCrossDown(timeframe,peakline,peaklinebar,  crossstart);
+   int xbar2 = BarCrossUp(timeframe,peakline,xbar-1,  crossstart);
+   int xbari2 = BarCrossDown(timeframe,peakline,xbari-1,  crossstart);
+   int xbar3 = BarCrossUp(timeframe,peakline,xbar2-1,  crossstart);
+   int xbari3 = BarCrossDown(timeframe,peakline,xbari2-1,  crossstart);
+   int bearB4cross = -1;
+   int bullB4cross = -1;
+   bool ann1bu=false, ann1be=false;
+   bool ann2bu=false, ann2be=false;
+   bool ann3bu=false, ann3be=false;
+/// ANN OB bullish 01
+   if(xbar>0)// Swing High formed then price breaks that swing Hi. Look for bear before cross
+      // if(iLow(Symbol(),timeframe,xbar-1) > iHigh(Symbol(),timeframe,xbar+1))//Imbalance
+      if(iClose(Symbol(),timeframe,xbar-1) > peakline) //
+         if(iClose(Symbol(),timeframe,xbar-2) > peakline) //
+            if(iClose(Symbol(),timeframe,xbar-3) > peakline) //
+               if(iClose(Symbol(),timeframe,xbar-4) > peakline) //
+                  if(iClose(Symbol(),timeframe,xbar-5) > peakline) //
+                    {
+                     //bearB4cross
+                     ann1be = true;
+                     bearB4cross = FindBear(timeframe,xbar+1,peaklinebar-1) ;
+                    }//bearB4cross Bullish OB
+// ANN OB  bearish 01
+   if(xbari>0)//Swing Low formed then price breaks that swing Lo. Look for bull before cross
+      //if(iHigh(Symbol(),timeframe,xbari-1) < iLow(Symbol(),timeframe,xbari+1))//Imbalance
+      if(iClose(Symbol(),timeframe,xbari-1) < peakline) //
+         if(iClose(Symbol(),timeframe,xbari-2) < peakline) //
+            if(iClose(Symbol(),timeframe,xbari-3) < peakline) //
+               if(iClose(Symbol(),timeframe,xbari-4) < peakline) //
+                  if(iClose(Symbol(),timeframe,xbari-5) < peakline) //
+                    {
+                     //bullB4cross
+                     ann1bu = true;
+                     bullB4cross = FindBull(timeframe,xbari+1,peaklinebar-1) ;
+                    }//bullB4cross Bearish OB
+/// ANN OB bullish 02
+   if(xbar2>0)
+      if(!ann1be)// Swing High formed then price breaks that swing Hi. Look for bear before cross
+         // if(iLow(Symbol(),timeframe,xbar-1) > iHigh(Symbol(),timeframe,xbar+1))//Imbalance
+         if(iClose(Symbol(),timeframe,xbar2-1) > peakline) //
+            if(iClose(Symbol(),timeframe,xbar2-2) > peakline) //
+               if(iClose(Symbol(),timeframe,xbar2-3) > peakline) //
+                  if(iClose(Symbol(),timeframe,xbar2-4) > peakline) //
+                     if(iClose(Symbol(),timeframe,xbar2-5) > peakline) //
+                       {
+                        //bearB4cross
+                        ann2be = true;
+                        bearB4cross = FindBear(timeframe,xbar2+1,peaklinebar-1) ;
+                       }//bearB4cross Bullish OB
+// ANN OB  bearish 02
+   if(xbari2>0)
+      if(!ann1bu)//Swing Low formed then price breaks that swing Lo. Look for bull before cross
+         //if(iHigh(Symbol(),timeframe,xbari-1) < iLow(Symbol(),timeframe,xbari+1))//Imbalance
+         if(iClose(Symbol(),timeframe,xbari2-1) < peakline) //
+            if(iClose(Symbol(),timeframe,xbari2-2) < peakline) //
+               if(iClose(Symbol(),timeframe,xbari2-3) < peakline) //
+                  if(iClose(Symbol(),timeframe,xbari2-4) < peakline) //
+                     if(iClose(Symbol(),timeframe,xbari2-5) < peakline) //
+                       {
+                        //bullB4cross
+                        ann2bu = true;
+                        bullB4cross = FindBull(timeframe,xbari2+1,peaklinebar-1) ;
+                       }//bullB4cross Bearish OB
+/// ANN OB bullish 03
+   if(xbar3>0)
+      if(!ann2be)// Swing High formed then price breaks that swing Hi. Look for bear before cross
+         // if(iLow(Symbol(),timeframe,xbar-1) > iHigh(Symbol(),timeframe,xbar+1))//Imbalance
+         if(iClose(Symbol(),timeframe,xbar3-1) > peakline) //
+            if(iClose(Symbol(),timeframe,xbar3-2) > peakline) //
+               if(iClose(Symbol(),timeframe,xbar3-3) > peakline) //
+                  if(iClose(Symbol(),timeframe,xbar3-4) > peakline) //
+                     if(iClose(Symbol(),timeframe,xbar3-5) > peakline) //
+                       {
+                        //bearB4cross
+                        ann3be = true;
+                        bearB4cross = FindBear(timeframe,xbar3+1,peaklinebar-1) ;
+                       }//bearB4cross Bullish OB
+// ANN OB  bearish 03
+   if(xbari3>0)
+      if(!ann2bu)//Swing Low formed then price breaks that swing Lo. Look for bull before cross
+         //if(iHigh(Symbol(),timeframe,xbari-1) < iLow(Symbol(),timeframe,xbari+1))//Imbalance
+         if(iClose(Symbol(),timeframe,xbari3-1) < peakline) //
+            if(iClose(Symbol(),timeframe,xbari3-2) < peakline) //
+               if(iClose(Symbol(),timeframe,xbari3-3) < peakline) //
+                  if(iClose(Symbol(),timeframe,xbari3-4) < peakline) //
+                     if(iClose(Symbol(),timeframe,xbari3-5) < peakline) //
+                       {
+                        //bullB4cross
+                        ann3bu = true;
+                        bullB4cross = FindBull(timeframe,xbari3+1,peaklinebar-1) ;
+                       }//bullB4cross Bearish OB
+///xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   double peaklinext = PikLine(timeframe,mode,shoulder,startBar,peakNo+1);
+   int   peaklinebarxt = PikBar(timeframe,mode,shoulder,startBar,peakNo+1);
+   int xbarxt = BarCrossUp(timeframe,peaklinext,peaklinebarxt,  peaklinebarprev);
+   int xbarixt = BarCrossDown(timeframe,peaklinext,peaklinebarxt,  peaklinebarprev);
+   if(xbarxt > 0)
+      if(xbar < 0)
+         if(iClose(Symbol(),timeframe,xbarxt-1) > iHigh(Symbol(),timeframe,xbarxt+1))//
+            if(iOpen(Symbol(),timeframe,xbarxt-1) > iHigh(Symbol(),timeframe,xbarxt+1))//
+               if(iClose(Symbol(),timeframe,xbarxt-2) > peaklinext)//
+                  if(iClose(Symbol(),timeframe,xbarxt-3) > peaklinext)//
+                     if(iClose(Symbol(),timeframe,xbarxt-4) > peaklinext)//
+                        if(iClose(Symbol(),timeframe,xbarxt-5) > peaklinext)//
+                          {
+                           //bearB4cross
+                           bearB4cross = FindBear(timeframe,xbarxt+1,peaklinebarxt-1) ;
+                          }//bearB4cross Bullish OB
+
+   if(xbarixt > 0)
+      if(xbari < 0)
+         if(iClose(Symbol(),timeframe,xbarixt-1) < iLow(Symbol(),timeframe,xbarixt+1))//
+            if(iOpen(Symbol(),timeframe,xbarixt-1) < iLow(Symbol(),timeframe,xbarixt+1))//
+               if(iClose(Symbol(),timeframe,xbarixt-2) < peaklinext)//
+                  if(iClose(Symbol(),timeframe,xbarixt-3) < peaklinext)//
+                     if(iClose(Symbol(),timeframe,xbarixt-4) < peaklinext)//
+                        if(iClose(Symbol(),timeframe,xbarixt-5) < peaklinext)//
+                          {
+                           //bearB4cross
+                           bullB4cross = FindBull(timeframe,xbarixt+1,peaklinebarxt-1) ;
+                          }//bearB4cross Bullish OB
+
+
+   return((mode == MODE_HIGH) ?
+          bearB4cross :
+          bullB4cross
+         );
+  }//blocktop END OF ANN
+////+------------------------------------------------------------------+
+//| Get  Order Block Bar                                            |
+//+------------------------------------------------------------------+
+////+------------------------------------------------------------------+
+//| Get  Order Block High Line                                            |
+//+------------------------------------------------------------------+
+double OBhighsmc(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar,int peakNo)
+  {
+//OBhigh
+   return(iHigh(Symbol(),timeframe,OBbarsmc(timeframe,mode,shoulder,startBar,peakNo)));
+  }//OBhigh
+////+------------------------------------------------------------------+
+//| Get  Order Block Low Line                                            |
+//+------------------------------------------------------------------+
+double OBlowsmc(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar,int peakNo)
+  {
+//OBhigh
+   return(iLow(Symbol(),timeframe,OBbarsmc(timeframe,mode,shoulder,startBar,peakNo)));
+  }//OBhigh
+////+------------------------------------------------------------------+
+//======
+//======
+int barscasmc(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar)
+  {
+//int barscan
+   int scan = -1;
+   int count = 0;
+   for(int i = 1; i <= PeaksLookBack; i++)   //for
+     {
+      int bar1 = OBbarsmc(timeframe,mode,shoulder,startBar, i); //what bar is peak i  ?
+      if(bar1  > 0)
+         if(mode == MODE_HIGH)
+            if(OBhighsmc(timeframe,mode,shoulder,startBar, i) > high(timeframe,bar1-6,4))
+               if(iClose(Symbol(),timeframe,i+shoulder) < OBlowsmc(timeframe,mode,shoulder,startBar, i))
+                  if(iClose(Symbol(),timeframe,i+shoulder+1) < OBlowsmc(timeframe,mode,shoulder,startBar, i))
+                     if(iClose(Symbol(),timeframe,i+shoulder+2) < OBlowsmc(timeframe,mode,shoulder,startBar, i))
+                        if(high(timeframe,45,1) - low(timeframe,45,1) >  SymbolInfoDouble(_Symbol, SYMBOL_POINT)*200)
+                          {scan = i; break;}
+      if(bar1  > 0)
+         if(mode == MODE_LOW)
+            if(OBlowsmc(timeframe,mode,shoulder,startBar, i) < low(timeframe,bar1-6,4))
+               if(iClose(Symbol(),timeframe,i+shoulder) > OBhighsmc(timeframe,mode,shoulder,startBar, i))
+                  if(iClose(Symbol(),timeframe,i+shoulder+1) > OBhighsmc(timeframe,mode,shoulder,startBar, i))
+                     if(iClose(Symbol(),timeframe,i+shoulder+2) > OBhighsmc(timeframe,mode,shoulder,startBar, i))
+                        if(high(timeframe,45,1) - low(timeframe,45,1) >  SymbolInfoDouble(_Symbol, SYMBOL_POINT)*200)
+                          {scan = i; break;}
+      // return( scan);
+     }//for(int)
+   return(scan);
+  }//int barscan
+////+------------------------------------------------------------------+
+////+------------------------------------------------------------------+
+//| Get  Order Block Bar                                            |
+//+------------------------------------------------------------------+
+int OBbarsmc(ENUM_TIMEFRAMES timeframe,int mode,int shoulder,int startBar,int peakNo)
+  {
+//blocktop
+   double peakline = PikLine(timeframe,mode,shoulder,startBar,peakNo);
+   int   peaklinebar = PikBar(timeframe,mode,shoulder,startBar,peakNo);
+   int   peaklinebarprev = 0;
+   if(peakNo > 1)
+      peaklinebarprev = PikBar(timeframe,mode,shoulder,startBar,peakNo-1);
+   if(peakNo == 1)
+      peaklinebarprev = startBar;
+   int   peakbardiff = EngulfDown(timeframe,peaklinebar,peaklinebarprev) - peaklinebarprev ;
+   int   peakbardiffi = EngulfUp(timeframe,peaklinebar,peaklinebarprev) - peaklinebarprev ;
+   int   peakengdiff = peaklinebar - EngulfDown(timeframe,peaklinebar,peaklinebarprev) ;
+   int   peakengdiffi = peaklinebar - EngulfUp(timeframe,peaklinebar,peaklinebarprev) ;
+   int   nextengfUp = EngulfUp(timeframe, EngulfUp(timeframe,peaklinebar,peaklinebarprev) - 1, peaklinebarprev) ;
+   int   nextengfDown = EngulfDown(timeframe, EngulfDown(timeframe,peaklinebar,peaklinebarprev) - 1, peaklinebarprev) ;
+   int   nextpeakengdiff = peaklinebar - nextengfDown ;
+   int   nextpeakengdiffi = peaklinebar - nextengfUp ;
+
+   int   nextengfUp2 = EngulfUp(timeframe, nextengfUp - 1, peaklinebarprev) ;
+   int   nextengfDown2 = EngulfDown(timeframe, nextengfDown - 1, peaklinebarprev) ;
+   int   nextpeakengdiff2 = peaklinebar - nextengfDown2 ;
+   int   nextpeakengdiffi2 = peaklinebar - nextengfUp2 ;
+
+   int   nextengfUp3 = EngulfUp(timeframe, nextengfUp2 - 1, peaklinebarprev) ;
+   int   nextengfDown3 = EngulfDown(timeframe, nextengfDown2 - 1, peaklinebarprev) ;
+   int   nextpeakengdiff3 = peaklinebar - nextengfDown3 ;
+   int   nextpeakengdiffi3 = peaklinebar - nextengfUp3 ;
+
+   int   peakbardiffext = nextengfDown - peaklinebarprev ;
+   int   peakbardiffext2 = nextengfDown2 - peaklinebarprev ;
+   int   peakbardiffext3 = nextengfDown3 - peaklinebarprev ;
+   int   peakbardiffiext = nextengfUp - peaklinebarprev ;
+   int   peakbardiffiext2 = nextengfUp2 - peaklinebarprev ;
+   int   peakbardiffiext3 = nextengfUp3 - peaklinebarprev ;
+
+   int xbar = BarCrossUp(timeframe,peakline,peaklinebar,  1);
+   int xbari = BarCrossDown(timeframe,peakline,peaklinebar,  1);
+   int bearB4cross = -1;
+   int bullB4cross = -1;
+   bool smc1bu=false, smc1be=false;
+   bool smc2bu=false, smc2be=false;
+/// bool smc2bu=false, smc2be=false;
+///SMC OB bearish 01
+   if(EngulfDown(timeframe,peaklinebar,peaklinebarprev) >0
+///swing hi formed then impulse break. Find highest bull candle between swing Hi and impulse move
+      && high(timeframe,peakbardiff-1,peaklinebarprev) <= iClose(NULL,timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev)+1)
+      && high(timeframe,peakbardiff-1,peaklinebarprev) <= iOpen(NULL,timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev)+1))
+      ///Above is Highest High after engulfing is below the candle body before engulf
+      if(iLow(NULL,timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev)) // break of structure
+         <  low(timeframe, peakengdiff +1, EngulfDown(timeframe,peaklinebar,peaklinebarprev)+1))     // break of structure
+
+         // if( low(timeframe, EngulfUp(timeframe,peaklinebar,peaklinebarprev) - 2 , 2 )
+         // > iClose( Symbol(),timeframe,  EngulfUp(timeframe,peaklinebar,peaklinebarprev)  ) )
+        {
+         //bearB4cross
+         smc1be = true;
+         bearB4cross = swinghibullbar(timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev),peaklinebar +3) ;
+        }//bearB4cross
+//SMC OB bullish 01
+   if(EngulfUp(timeframe,peaklinebar,peaklinebarprev) >0
+//swing lo formed then impulse break. Find lowest bear candle between swing Lo and impulse move
+      && low(timeframe,peakbardiffi-1,peaklinebarprev) >= iClose(NULL,timeframe,EngulfUp(timeframe,peaklinebar,peaklinebarprev)+1)
+      && low(timeframe,peakbardiffi-1,peaklinebarprev) >= iOpen(NULL,timeframe,EngulfUp(timeframe,peaklinebar,peaklinebarprev)+1))
+      //Above is lowest low after engulfing is above the candle body before engulf
+      if(iHigh(NULL,timeframe,EngulfUp(timeframe,peaklinebar,peaklinebarprev)) // break of structure)
+         >  high(timeframe, peakengdiffi +1, EngulfUp(timeframe,peaklinebar,peaklinebarprev)+1))     // break of structure)
+
+        {
+         //bearB4cross
+         smc1bu = true;
+         bullB4cross = swinglobearbar(timeframe, EngulfUp(timeframe,peaklinebar,peaklinebarprev), peaklinebar +3) ;
+        }//bearB4cross
+
+//SMC OB bearish vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv 02
+   if(EngulfDown(timeframe,peaklinebar,peaklinebarprev) >0
+///swing hi formed then impulse break. Find highest bull candle between swing Hi and impulse move
+      && high(timeframe,peakbardiffext-1,peaklinebarprev) <= iClose(NULL,timeframe,nextengfDown+1)
+      && high(timeframe,peakbardiffext-1,peaklinebarprev) <= iOpen(NULL,timeframe,nextengfDown+1))
+      ///Above is Highest High after engulfing is below the candle body before engulf
+      if(iLow(NULL,timeframe, nextengfDown)   // break of structure
+         <  low(timeframe, nextpeakengdiff +1, nextengfDown +1))    // break of structure
+
+         if(high(timeframe, EngulfDown(timeframe,peaklinebar,peaklinebarprev) - 2, 2)
+            < iClose(Symbol(),timeframe,  EngulfDown(timeframe,peaklinebar,peaklinebarprev)))
+           {
+            //bearB4cross
+            smc1be = true;
+            bearB4cross = swinghibullbar(timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev),peaklinebar +3) ;
+           }//bearB4cross
+//SMC OB bearish vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv 03
+   if(EngulfDown(timeframe,peaklinebar,peaklinebarprev) >0
+///swing hi formed then impulse break. Find highest bull candle between swing Hi and impulse move
+      && high(timeframe,peakbardiffext2-1,peaklinebarprev) <= iClose(NULL,timeframe,nextengfDown2+1)
+      && high(timeframe,peakbardiffext2-1,peaklinebarprev) <= iOpen(NULL,timeframe,nextengfDown2+1))
+      ///Above is Highest High after engulfing is below the candle body before engulf
+      if(iLow(NULL,timeframe, nextengfDown2)   // break of structure
+         <  low(timeframe, nextpeakengdiff2 +1, nextengfDown2 +1))    // break of structure
+
+         if(high(timeframe, EngulfDown(timeframe,peaklinebar,peaklinebarprev) - 2, 2)
+            < iClose(Symbol(),timeframe,  EngulfDown(timeframe,peaklinebar,peaklinebarprev)))
+           {
+            //bearB4cross
+            smc1be = true;
+            bearB4cross = swinghibullbar(timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev),peaklinebar +3) ;
+           }//bearB4cross
+//SMC OB bearish vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv 04
+   if(EngulfDown(timeframe,peaklinebar,peaklinebarprev) >0
+///swing hi formed then impulse break. Find highest bull candle between swing Hi and impulse move
+      && high(timeframe,peakbardiffext3-1,peaklinebarprev) <= iClose(NULL,timeframe,nextengfDown3+1)
+      && high(timeframe,peakbardiffext3-1,peaklinebarprev) <= iOpen(NULL,timeframe,nextengfDown2+1))
+      ///Above is Highest High after engulfing is below the candle body before engulf
+      if(iLow(NULL,timeframe, nextengfDown3)   // break of structure
+         <  low(timeframe, nextpeakengdiff3 +1, nextengfDown3 +1))    // break of structure
+
+         if(high(timeframe, EngulfDown(timeframe,peaklinebar,peaklinebarprev) - 2, 2)
+            < iClose(Symbol(),timeframe,  EngulfDown(timeframe,peaklinebar,peaklinebarprev)))
+           {
+            //bearB4cross
+            smc1be = true;
+            bearB4cross = swinghibullbar(timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev),peaklinebar +3) ;
+           }//bearB4cross
+///xxxxx
+//SMC OB bullish 02
+   if(EngulfUp(timeframe,peaklinebar,peaklinebarprev) >0
+//swing lo formed then impulse break. Find lowest bear candle between swing Lo and impulse move
+      && low(timeframe,peakbardiffiext-1,peaklinebarprev) >= iClose(NULL,timeframe,nextengfUp+1)
+      && low(timeframe,peakbardiffiext-1,peaklinebarprev) >= iOpen(NULL,timeframe,nextengfUp+1))
+      //Above is lowest low after engulfing is above the candle body before engulf
+      if(iHigh(NULL,timeframe, nextengfUp)   // break of structure
+         >  high(timeframe, nextpeakengdiffi +1, nextengfUp +1))    // break of structure
+        {
+         //bearB4cross
+         smc1bu = true;
+         bullB4cross = swinglobearbar(timeframe, EngulfUp(timeframe,peaklinebar,peaklinebarprev), peaklinebar +3) ;
+        }//bearB4cross
+//SMC OB bullish 03
+   if(EngulfUp(timeframe,peaklinebar,peaklinebarprev) >0
+//swing lo formed then impulse break. Find lowest bear candle between swing Lo and impulse move
+      && low(timeframe,peakbardiffiext2-1,peaklinebarprev) >= iClose(NULL,timeframe,nextengfUp2+1)
+      && low(timeframe,peakbardiffiext2-1,peaklinebarprev) >= iOpen(NULL,timeframe,nextengfUp2+1))
+      //Above is lowest low after engulfing is above the candle body before engulf
+      if(iHigh(NULL,timeframe, nextengfUp2)   // break of structure
+         >  high(timeframe, nextpeakengdiffi2 +1, nextengfUp2 +1))    // break of structure
+        {
+         //bearB4cross
+         smc1bu = true;
+         bullB4cross = swinglobearbar(timeframe, EngulfUp(timeframe,peaklinebar,peaklinebarprev), peaklinebar +3) ;
+        }//bearB4cross
+//SMC OB bullish 04
+   if(EngulfUp(timeframe,peaklinebar,peaklinebarprev) >0
+//swing lo formed then impulse break. Find lowest bear candle between swing Lo and impulse move
+      && low(timeframe,peakbardiffiext3-1,peaklinebarprev) >= iClose(NULL,timeframe,nextengfUp3+1)
+      && low(timeframe,peakbardiffiext3-1,peaklinebarprev) >= iOpen(NULL,timeframe,nextengfUp3+1))
+      //Above is lowest low after engulfing is above the candle body before engulf
+      if(iHigh(NULL,timeframe, nextengfUp3)   // break of structure
+         >  high(timeframe, nextpeakengdiffi3 +1, nextengfUp3 +1))    // break of structure
+        {
+         //bearB4cross
+         smc1bu = true;
+         bullB4cross = swinglobearbar(timeframe, EngulfUp(timeframe,peaklinebar,peaklinebarprev), peaklinebar +3) ;
+        }//bearB4cross
+//xxxxx
+//wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+//SMC OB bearish
+   if(//xbar<0 &&
+      EngulfDown(timeframe,peaklinebar,peaklinebarprev) >0
+      && high(timeframe,peakbardiff-2,peaklinebarprev) //Imbalance
+      <= iLow(NULL,timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev)+1)) //imbalance
+      if(bearcandle(timeframe, EngulfDown(timeframe,peaklinebar,peaklinebarprev)+1)) // bear candle before engulf
+         if(iLow(NULL,timeframe,EngulfDown(timeframe,peaklinebar,peaklinebarprev)) // break of structure
+            <  low(timeframe, peakengdiff +1, EngulfDown(timeframe,peaklinebar,peaklinebarprev)+1))    // break of structure
+            if(!smc1be)
+
+               if(high(timeframe, EngulfDown(timeframe,peaklinebar,peaklinebarprev) - 2, 2)
+                  < iClose(Symbol(),timeframe,  EngulfDown(timeframe,peaklinebar,peaklinebarprev)))
+                 {
+                  //bearB4cross
+                  smc2be = true;
+                  bearB4cross = EngulfDown(timeframe,peaklinebar,peaklinebarprev)+1 ;
+                 }//bearB4cross BEARISH OB
+//SMC OB   bullish
+   if(//xbari<0 &&
+      EngulfUp(timeframe,peaklinebar,peaklinebarprev) >0 //
+      && low(timeframe,peakbardiffi-2,peaklinebarprev) //imbalance
+      >= iHigh(NULL,timeframe,EngulfUp(timeframe,peaklinebar,peaklinebarprev)+1)) //imbalance
+      if(bullcandle(timeframe, EngulfUp(timeframe,peaklinebar,peaklinebarprev)+1)) //bull candle before engulf
+         if(iHigh(NULL,timeframe,EngulfUp(timeframe,peaklinebar,peaklinebarprev)) // break of structure)
+            >  high(timeframe, peakengdiffi +1, EngulfUp(timeframe,peaklinebar,peaklinebarprev)+1))    // break of structure)
+            if(!smc1bu)
+              {
+               //bearB4cross
+               smc2bu = true;
+               bullB4cross = EngulfUp(timeframe,peaklinebar,peaklinebarprev)+1 ;
+              }//bearB4cross BULLISH OB
+///WWWWWWWWWWWWWWWWWWW
+//WWWWWWWWWWWWWWWWWWW
+   if(EngulfDowni(timeframe,peaklinebar,peaklinebarprev) >0)
+      if(high(timeframe, EngulfDowni(timeframe,peaklinebar,peaklinebarprev) - 3, 2)
+         < iClose(Symbol(),timeframe,  EngulfDowni(timeframe,peaklinebar,peaklinebarprev)))
+         if(!smc1be)
+           {
+            //bearB4cross
+            smc2be = true;
+            bearB4cross = EngulfDowni(timeframe,peaklinebar,peaklinebarprev)+1 ;
+           }//bearB4cross BEARISH OB
+//SMC OB   bullish
+   if(EngulfUpi(timeframe,peaklinebar,peaklinebarprev) >0) //
+      if(low(timeframe, EngulfUpi(timeframe,peaklinebar,peaklinebarprev) - 3, 2)
+         > iClose(Symbol(),timeframe,  EngulfUpi(timeframe,peaklinebar,peaklinebarprev)))
+         if(!smc1bu)
+           {
+            //bearB4cross
+            smc2bu = true;
+            bullB4cross = EngulfUpi(timeframe,peaklinebar,peaklinebarprev)+1 ;
+           }//bearB4cross BULLISH OB
+
+
+   return((mode == MODE_HIGH) ?
+          bearB4cross :
+          bullB4cross
+         );
+  }//blocktop END SMC OB
+////+------------------------------------------------------------------+
+
+////+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+int EngulfDown(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i > end; i--)   //for
+     {
+      if(iLow(Symbol(),timeframe,i+1) > iClose(Symbol(),timeframe,i))
+        {currentbar = i; break; }
+     }//for
+   return(currentbar);
+  }//bar
+//+------------------------------------------------------------------+
+int EngulfUp(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i > end; i--)   //for
+     {
+      if(iHigh(Symbol(),timeframe,i+1) < iClose(Symbol(),timeframe,i))
+        {currentbar = i; break; }
+     }//for
+   return(currentbar);
+  }//bar
+////+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+int EngulfDowni(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i > end; i--)   //for
+     {
+      if(iLow(Symbol(),timeframe,i+1) > iClose(Symbol(),timeframe,i))
+         if(iClose(Symbol(),timeframe,i) < low(timeframe, 3, i + 1))
+           {currentbar = i; break ; }
+     }//for
+   return(currentbar);
+  }//bar
+//+------------------------------------------------------------------+
+int EngulfUpi(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i > end; i--)   //for
+     {
+      if(iHigh(Symbol(),timeframe,i+1) < iClose(Symbol(),timeframe,i))
+         if(iClose(Symbol(),timeframe,i) > high(timeframe, 3, i + 1))
+           {currentbar = i; break ; }
+     }//for
+   return(currentbar);
+  }//bar
+//+------------------------------------------------------------------+
+int EngulfBuy(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start+1; i <= end; i++)   //for
+     {
+      if(iHigh(Symbol(),timeframe,i+1) < iClose(Symbol(),timeframe,i))
+         if(iClose(Symbol(),timeframe,i) > high(timeframe, 3, i + 1))
+            if(iLow(Symbol(),timeframe,1) < lowclo(timeframe, 3, i + 1))
+              {currentbar = i; break ; }
+     }//for
+   return(currentbar);
+  }//bar
+//+------------------------------------------------------------------+
+int EngulfSell(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start+1; i <= end; i++)   //for
+     {
+      if(iLow(Symbol(),timeframe,i+1) > iClose(Symbol(),timeframe,i))
+         if(iClose(Symbol(),timeframe,i) < low(timeframe, 3, i + 1))
+            if(iHigh(Symbol(),timeframe,1) > hiclo(timeframe, 3, i + 1))
+              {currentbar = i; break ; }
+     }//for
+   return(currentbar);
+  }//bar
+////+------------------------------------------------------------------+
+double PikLine(ENUM_TIMEFRAMES timeframe,int mode, int shoulder, int startBar,int peakNo)
+  {
+//PikLine
+   return((mode == MODE_HIGH) ?
+          iHigh(Symbol(),timeframe,PikBar(timeframe, (ENUM_SERIESMODE)mode,shoulder,startBar,peakNo)) :
+          iLow(Symbol(),timeframe,PikBar(timeframe, (ENUM_SERIESMODE)MODE_LOW,shoulder,startBar,peakNo))
+         );
+  }//PikLine
+//+------------------------------------------------------------------+
+//|                                              |
+//+------------------------------------------------------------------+
+int BarCrossUp(ENUM_TIMEFRAMES timeframe, double linecross,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i > end; i--)   //for
+     {
+      if(iClose(Symbol(),timeframe,i) > linecross &&
+         iOpen(Symbol(),timeframe,i) < linecross)
+        {currentbar = i; break; }
+     }//for
+   return(currentbar);
+  }//bar
+//+------------------------------------------------------------------+
+int BarCrossDown(ENUM_TIMEFRAMES timeframe, double linecross,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i > end; i--)   //for
+     {
+      if(iClose(Symbol(),timeframe,i) < linecross &&
+         iOpen(Symbol(),timeframe,i) > linecross)
+        {currentbar = i; break;}
+     }//for
+   return(currentbar);
+  }//bar
+//+------------------------------------------------------------------+
+int FindBull(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i <= end; i++)   //for
+     {
+      if(bullcandle(timeframe,i))
+        {currentbar = i; break; }
+     }//for
+   return(currentbar);
+  }
+//+------------------------------------------------------------------+
+int FindBear(ENUM_TIMEFRAMES timeframe,int start, int end)
+  {
+//bar
+   int currentbar =-1;
+   for(int i = start; i <= end; i++)   //for
+     {
+      if(bearcandle(timeframe,i))
+        {currentbar = i; break; }
+     }//for
+   return(currentbar);
+  }
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+int swinghibullbar(ENUM_TIMEFRAMES timeframe, int candleStart, int candleEnd)
+  {
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   int bars_to_copy=(candleEnd-candleStart)+1;
+   int bar_index=0;
+   double highest_high=0;
+   int copied=CopyRates(Symbol(),timeframe,candleStart,bars_to_copy,rates);
+   if(copied>0)
+     {
+      for(int x=0; x<copied; x++)
+        {
+         if(rates[x].close>rates[x].open) //Is bullish
+           {
+            if(rates[x].high>highest_high)
+              {
+               bar_index=x+candleStart;
+               highest_high=rates[x].high;
+              }
+           }
+        }
+     }
+   return(bar_index);
+  }
+//+------------------------------------------------------------------+
+int swinglobearbar(ENUM_TIMEFRAMES timeframe, int candleStart, int candleEnd)
+  {
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   int bars_to_copy=(candleEnd-candleStart)+1;
+   int bar_index=0;
+   double lowest_low=9999999999;
+   int copied=CopyRates(Symbol(),timeframe,candleStart,bars_to_copy,rates);
+   if(copied>0)
+     {
+      for(int x=0; x<copied; x++)
+        {
+         if(rates[x].close<rates[x].open) //Is bearish
+           {
+            if(rates[x].low<lowest_low)
+              {
+               bar_index=x+candleStart;
+               lowest_low=rates[x].low;
+              }
+           }
+        }
+     }
+   return(bar_index);
+  }
+
+//a2//+------------------------------------------------------------------+
+//a2//+------------------------------------------------------------------+
+///+------------------------------------------------------------------+
+bool bullcandle(ENUM_TIMEFRAMES timeframe, int shift)
+  {
+   bool ReturnValue = false;
+
+   if(iClose(NULL,timeframe,shift) > iOpen(NULL,timeframe,shift))
+     { ReturnValue = true;  } //sch
+   return ReturnValue;
+  }
+///+------------------------------------------------------------------+
+bool bearcandle(ENUM_TIMEFRAMES timeframe, int shift)
+  {
+   bool ReturnValue = false;
+
+   if(iClose(NULL,timeframe,shift) < iOpen(NULL,timeframe,shift))
+     { ReturnValue = true;  } //sch
+   return ReturnValue;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+bool createObject3(string name, double val)
+  {
+   ObjectCreate(0,name, OBJ_HLINE, 0, 0, val);
+
+   return (true);
+  }
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void ChartWrite(string  name,
+                string  comment,
+                int     x_distance,
+                int     y_distance,
+                int     FontSize,
+                color   clr)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetString(0, name, OBJPROP_TEXT, comment);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetString(0, name,  OBJPROP_FONT, "Lucida Console");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x_distance);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y_distance);
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void ChartWritei(string  name,
+                 string  comment,
+                 int     x_distance,
+                 int     y_distance,
+                 int     FontSize,
+                 color   clr)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetString(0, name, OBJPROP_TEXT, comment);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetString(0, name,  OBJPROP_FONT, "Lucida Console");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x_distance);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y_distance);
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void ChartWriteii(string  name,
+                  string  comment,
+                  int     x_distance,
+                  int     y_distance,
+                  int     FontSize,
+                  color   clr)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetString(0, name, OBJPROP_TEXT, comment);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetString(0, name,  OBJPROP_FONT, "Lucida Console");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x_distance);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y_distance);
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void ChartWriteiii(string  name,
+                   string  comment,
+                   int     x_distance,
+                   int     y_distance,
+                   int     FontSize,
+                   color   clr)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetString(0, name, OBJPROP_TEXT, comment);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetString(0, name,  OBJPROP_FONT, "Lucida Console");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x_distance);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y_distance);
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void ChartWriteiv(string  name,
+                  string  comment,
+                  int     x_distance,
+                  int     y_distance,
+                  int     FontSize,
+                  color   clr)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetString(0, name, OBJPROP_TEXT, comment);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetString(0, name,  OBJPROP_FONT, "Lucida Console");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x_distance);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y_distance);
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void ChartWritev(string  name,
+                 string  comment,
+                 int     x_distance,
+                 int     y_distance,
+                 int     FontSize,
+                 color   clr)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetString(0, name, OBJPROP_TEXT, comment);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetString(0, name,  OBJPROP_FONT, "Lucida Console");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x_distance);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y_distance);
+  }
+
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
